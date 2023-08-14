@@ -72,6 +72,11 @@ impl Receiver {
             return;
         }
 
+        if packet.flags != 0 {
+            eprintln!("unknown flags in packet, ignoring entire packet");
+            return;
+        }
+
         if let Some(start) = self.start.as_mut() {
             if packet.seq < start.seq {
                 eprintln!("received packet with seq before start, dropping");
