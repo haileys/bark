@@ -73,6 +73,12 @@ impl SampleDuration {
         SampleDuration(duration)
     }
 
+    pub fn to_std_duration_lossy(&self) -> std::time::Duration {
+        let micros = (u128::from(self.0) * 1_000_000) / u128::from(protocol::SAMPLE_RATE.0);
+        let micros = u64::try_from(micros).expect("can't narrow durection to u64");
+        std::time::Duration::from_micros(micros)
+    }
+
     pub fn mul(&self, times: u64) -> Self {
         SampleDuration(self.0.checked_mul(times).unwrap())
     }

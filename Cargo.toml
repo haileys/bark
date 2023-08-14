@@ -10,3 +10,4 @@ bytemuck = { version = "1.13.1", features = ["derive"] }
 cpal = "0.15.2"
 derive_more = "0.99.17"
 structopt = "0.3.26"
+termcolor = "1.2.0"

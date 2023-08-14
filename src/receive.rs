@@ -2,9 +2,11 @@ use std::collections::VecDeque;
 
 use crate::protocol::{Packet, self};
 use crate::time::{Timestamp, SampleDuration};
+use crate::status::Status;
 
 pub struct Receiver {
     opt: ReceiverOpt,
+    status: Status,
     start: Option<StreamStart>,
     queue: VecDeque<QueueEntry>,
 }
@@ -63,42 +65,45 @@ impl Receiver {
             opt,
             start: None,
             queue,
+            status: Status::new(),
         }
     }
 
     pub fn push_packet(&mut self, packet: &Packet) {
         if packet.magic != protocol::MAGIC {
-            eprintln!("ignoring packet with bad magic");
+            println!("\rignoring packet with bad magic");
             return;
         }
 
         if packet.flags != 0 {
-            eprintln!("unknown flags in packet, ignoring entire packet");
+            println!("\runknown flags in packet, ignoring entire packet");
             return;
         }
 
         if let Some(start) = self.start.as_mut() {
             if packet.seq < start.seq {
-                eprintln!("received packet with seq before start, dropping");
+                println!("\rreceived packet with seq before start, dropping");
                 return;
             }
 
             if let Some(front) = self.queue.front() {
                 if packet.seq <= front.seq {
-                    eprintln!("received packet with seq <= queue front seq, dropping");
+                    println!("\rreceived packet with seq <= queue front seq, dropping");
                     return;
                 }
             }
 
             if let Some(back) = self.queue.back() {
                 if back.seq + self.opt.max_seq_gap as u64 <= packet.seq {
-                    eprintln!("received packet with seq too far in future, resetting stream");
+                    println!("\rreceived packet with seq too far in future, resetting stream");
                     self.start = Some(StreamStart::from_packet(packet));
+                    self.status.clear_sync();
                     self.queue.clear();
                 }
             }
         } else {
             self.start = Some(StreamStart::from_packet(packet));
+            self.status.clear_sync();
         }
 
         let start = self.start.as_ref().unwrap();
@@ -152,6 +157,8 @@ impl Receiver {
             return;
         };
 
+        let request_end_ts = pts.add(SampleDuration::from_buffer_offset(data.len()));
+
         // sync up to stream if necessary:
         if !start.sync {
             loop {
@@ -167,7 +174,7 @@ impl Receiver {
 
                     if late >= SampleDuration::ONE_PACKET {
                         // we are late by more than a packet, skip to the next
-                        eprintln!("late by more than a packet, pts: {:?}, front pts: {:?}, late: {:?}", pts, front.pts, late);
+                        println!("\rlate by more than a packet, pts: {:?}, front pts: {:?}, late: {:?}", pts, front.pts, late);
                         self.queue.pop_front();
                         continue;
                     }
@@ -176,8 +183,8 @@ impl Receiver {
                     front.consumed = late;
 
                     // we are synced
-                    println!("SYNC!");
                     start.sync = true;
+                    self.status.set_sync();
                     break;
                 }
 
@@ -198,16 +205,18 @@ impl Receiver {
                 data = &mut data[zero_count..];
 
                 // then mark ourselves as synced and fall through to regular processing
-                println!("SYNC!");
                 start.sync = true;
+                self.status.set_sync();
                 break;
             }
         }
 
+        let mut copy_end_ts = None;
+
         // copy data to out
         while data.len() > 0 {
             let Some(front) = self.queue.front_mut() else {
-                eprintln!("queue underrun, stream-side delay too low");
+                println!("\rqueue underrun, stream-side delay too low");
                 data.fill(0f32);
                 return;
             };
@@ -223,11 +232,18 @@ impl Receiver {
 
             data = &mut data[copy_count..];
             front.consumed = SampleDuration::from_buffer_offset(buffer_copy_end);
+            copy_end_ts = Some(front.pts.add(front.consumed));
 
             // pop packet if fully consumed
             if front.consumed == SampleDuration::ONE_PACKET {
                 self.queue.pop_front();
             }
         }
+
+        if let Some(copy_end_ts) = copy_end_ts {
+            self.status.record_latency(request_end_ts, copy_end_ts);
+        }
+
+        self.status.render();
     }
 }
