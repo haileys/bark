@@ -1,4 +1,4 @@
-# bark!
+# <img src="https://user-images.githubusercontent.com/179065/260457176-b0975ce3-03a0-4df8-a979-a2ba84b3b039.png" width=64 height=51> bark!
 
 low latency multi-receiver synchronised audio streaming for local networks.
 
