@@ -67,6 +67,11 @@ impl Receiver {
     }
 
     pub fn push_packet(&mut self, packet: &Packet) {
+        if packet.magic != protocol::MAGIC {
+            eprintln!("ignoring packet with bad magic");
+            return;
+        }
+
         if let Some(start) = self.start.as_mut() {
             if packet.seq < start.seq {
                 eprintln!("received packet with seq before start, dropping");
