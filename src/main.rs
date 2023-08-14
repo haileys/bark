@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use bytemuck::Zeroable;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BuildStreamError, PlayStreamError, BufferSize};
+use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BufferSize, SupportedBufferSize};
 use structopt::StructOpt;
 
 use protocol::{TimestampMicros, Packet, PacketBuffer};
@@ -51,8 +51,10 @@ enum RunError {
     BindSocket(SocketAddrV4, std::io::Error),
     JoinMulticast(std::io::Error),
     NoDeviceAvailable,
-    BuildStream(BuildStreamError),
-    Stream(PlayStreamError),
+    NoSupportedStreamConfig,
+    StreamConfigs(cpal::SupportedStreamConfigsError),
+    BuildStream(cpal::BuildStreamError),
+    Stream(cpal::PlayStreamError),
     Socket(std::io::Error),
 }
 
@@ -76,11 +78,7 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
     let device = host.default_input_device()
         .ok_or(RunError::NoDeviceAvailable)?;
 
-    let config = StreamConfig {
-        channels: protocol::CHANNELS,
-        sample_rate: protocol::SAMPLE_RATE,
-        buffer_size: BufferSize::Fixed(protocol::FRAMES_PER_PACKET as u32),
-    };
+    let config = config_for_device(&device)?;
 
     let bind = opt.bind.unwrap_or(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
@@ -165,11 +163,7 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
     let device = host.default_output_device()
         .ok_or(RunError::NoDeviceAvailable)?;
 
-    let config = StreamConfig {
-        channels: protocol::CHANNELS,
-        sample_rate: protocol::SAMPLE_RATE,
-        buffer_size: BufferSize::Fixed(protocol::FRAMES_PER_PACKET as u32),
-    };
+    let config = config_for_device(&device)?;
 
     struct SharedState {
         pub recv: receive::Receiver,
@@ -228,4 +222,30 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
         let mut state = state.lock().unwrap();
         state.recv.push_packet(&packet);
     }
+}
+
+fn config_for_device(device: &cpal::Device) -> Result<StreamConfig, RunError> {
+    let configs = device.supported_input_configs()
+        .map_err(RunError::StreamConfigs)?;
+
+    let config = configs
+        .filter(|config| config.sample_format() == protocol::SAMPLE_FORMAT)
+        .filter(|config| config.channels() == protocol::CHANNELS)
+        .nth(0)
+        .ok_or(RunError::NoSupportedStreamConfig)?;
+
+    let buffer_size = match config.buffer_size() {
+        SupportedBufferSize::Range { min, .. } => {
+            std::cmp::max(*min, protocol::FRAMES_PER_PACKET as u32)
+        }
+        SupportedBufferSize::Unknown => {
+            protocol::FRAMES_PER_PACKET as u32
+        }
+    };
+
+    Ok(StreamConfig {
+        channels: protocol::CHANNELS,
+        sample_rate: protocol::SAMPLE_RATE,
+        buffer_size: BufferSize::Fixed(buffer_size),
+    })
 }
