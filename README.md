@@ -40,3 +40,11 @@ Note: you must have `pipewire-alsa` installed for this to work.
     ```sh-session
     $ PIPEWIRE_NODE=145 ffplay music.flac
     ```
+
+### Running the receiver
+
+```sh-session
+$ bark receive --group 224.100.100.100 --port 1234
+```
+
+Simple as
