@@ -40,6 +40,8 @@ struct StreamOpt {
     pub port: u16,
     #[structopt(long, short)]
     pub bind: Option<SocketAddrV4>,
+    #[structopt(long, default_value="20")]
+    pub delay_ms: u64,
 }
 
 #[derive(Debug)]
@@ -83,6 +85,9 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
     let socket = UdpSocket::bind(bind)
         .map_err(|e| RunError::BindSocket(bind, e))?;
 
+    let delay = Duration::from_millis(opt.delay_ms);
+    let delay = SampleDuration::from_std_duration_lossy(delay);
+
     let mut packet = Packet {
         magic: protocol::MAGIC,
         flags: 0,
@@ -98,7 +103,7 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
             // assert data only contains complete frames:
             assert!(data.len() % usize::from(protocol::CHANNELS) == 0);
 
-            let mut timestamp = Timestamp::now().add(SampleDuration::ONE_PACKET.mul(6));
+            let mut timestamp = Timestamp::now().add(delay);
 
             if packet.pts.0 == 0 {
                 packet.pts = timestamp.to_micros_lossy();
