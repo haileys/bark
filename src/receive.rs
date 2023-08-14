@@ -52,11 +52,6 @@ impl StreamStart {
     }
 }
 
-pub enum PacketDisposition {
-    Pop,
-    Pass,
-}
-
 impl Receiver {
     pub fn new(opt: ReceiverOpt) -> Self {
         let queue = VecDeque::with_capacity(opt.max_seq_gap);

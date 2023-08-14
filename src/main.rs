@@ -1,7 +1,7 @@
-pub mod receive;
-pub mod protocol;
-pub mod time;
-pub mod status;
+mod receive;
+mod protocol;
+mod time;
+mod status;
 
 use std::net::{UdpSocket, Ipv4Addr, SocketAddrV4};
 use std::process::ExitCode;

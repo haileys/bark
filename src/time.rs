@@ -43,10 +43,6 @@ impl Timestamp {
         Timestamp(self.0.checked_add(duration.0).unwrap())
     }
 
-    pub fn sub(&self, duration: SampleDuration) -> Timestamp {
-        Timestamp(self.0.checked_sub(duration.0).unwrap())
-    }
-
     pub fn duration_since(&self, other: Timestamp) -> SampleDuration {
         SampleDuration(self.0.checked_sub(other.0).unwrap())
     }
@@ -71,12 +67,6 @@ impl SampleDuration {
         let duration = duration.as_micros() * u128::from(protocol::SAMPLE_RATE.0) / 1_000_000;
         let duration = u64::try_from(duration).expect("can't narrow duration to u64");
         SampleDuration(duration)
-    }
-
-    pub fn to_std_duration_lossy(&self) -> std::time::Duration {
-        let micros = (u128::from(self.0) * 1_000_000) / u128::from(protocol::SAMPLE_RATE.0);
-        let micros = u64::try_from(micros).expect("can't narrow durection to u64");
-        std::time::Duration::from_micros(micros)
     }
 
     pub fn mul(&self, times: u64) -> Self {
