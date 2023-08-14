@@ -29,7 +29,7 @@ struct ReceiveOpt {
     #[structopt(long, short)]
     pub port: u16,
     #[structopt(long, short)]
-    pub bind: Ipv4Addr,
+    pub bind: Option<Ipv4Addr>,
     #[structopt(long, default_value="12")]
     pub max_seq_gap: usize,
 }
@@ -200,12 +200,13 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
-    let bind = SocketAddrV4::new(opt.bind, opt.port);
+    let bind_ip = opt.bind.unwrap_or(Ipv4Addr::UNSPECIFIED);
+    let bind_addr = SocketAddrV4::new(bind_ip, opt.port);
 
-    let socket = UdpSocket::bind(bind)
-        .map_err(|e| RunError::BindSocket(bind, e))?;
+    let socket = UdpSocket::bind(bind_addr)
+        .map_err(|e| RunError::BindSocket(bind_addr, e))?;
 
-    socket.join_multicast_v4(&opt.group, &opt.bind)
+    socket.join_multicast_v4(&opt.group, &bind_ip)
         .map_err(RunError::JoinMulticast)?;
 
     loop {
