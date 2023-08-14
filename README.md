@@ -1,5 +1,12 @@
 # bark!
 
+low latency multi-receiver synchronised audio streaming for local networks.
+
+* Transmits uncompressed PCM data over UDP multicast
+
+* Relies on synchronised system clocks. Recommended implementation is to run a [chronyd](https://wiki.archlinux.org/title/Chrony) server locally, it can achieve precision in the tens of microseconds over LANs
+
+
 ### Running the server under Pipewire
 
 * First create a virtual node for Bark to receive audio from. You will configure applications to send audio to this node.
