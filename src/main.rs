@@ -22,7 +22,7 @@ enum Opt {
     Receive(ReceiveOpt),
 }
 
-#[derive(StructOpt)]
+#[derive(StructOpt, Clone)]
 struct ReceiveOpt {
     #[structopt(long, short)]
     pub group: Ipv4Addr,
@@ -30,6 +30,8 @@ struct ReceiveOpt {
     pub port: u16,
     #[structopt(long, short)]
     pub bind: Ipv4Addr,
+    #[structopt(long, default_value="12")]
+    pub max_seq_gap: usize,
 }
 
 #[derive(StructOpt)]
@@ -174,7 +176,9 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
     }
 
     let state = Arc::new(Mutex::new(SharedState {
-        recv: receive::Receiver::new(),
+        recv: receive::Receiver::new(receive::ReceiverOpt {
+            max_seq_gap: opt.max_seq_gap,
+        }),
     }));
 
     let _stream = device.build_output_stream(&config,

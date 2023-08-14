@@ -1,11 +1,16 @@
 use std::collections::VecDeque;
 
-use crate::protocol::{Packet, RECEIVER_BUFFERED_PACKETS, self};
+use crate::protocol::{Packet, self};
 use crate::time::{Timestamp, SampleDuration};
 
 pub struct Receiver {
+    opt: ReceiverOpt,
     start: Option<StreamStart>,
     queue: VecDeque<QueueEntry>,
+}
+
+pub struct ReceiverOpt {
+    pub max_seq_gap: usize,
 }
 
 struct QueueEntry {
@@ -51,10 +56,13 @@ pub enum PacketDisposition {
 }
 
 impl Receiver {
-    pub fn new() -> Self {
+    pub fn new(opt: ReceiverOpt) -> Self {
+        let queue = VecDeque::with_capacity(opt.max_seq_gap);
+
         Receiver {
+            opt,
             start: None,
-            queue: VecDeque::new(),
+            queue,
         }
     }
 
@@ -73,7 +81,7 @@ impl Receiver {
             }
 
             if let Some(back) = self.queue.back() {
-                if back.seq + RECEIVER_BUFFERED_PACKETS as u64 <= packet.seq {
+                if back.seq + self.opt.max_seq_gap as u64 <= packet.seq {
                     eprintln!("received packet with seq too far in future, resetting stream");
                     self.start = Some(StreamStart::from_packet(packet));
                     self.queue.clear();
@@ -87,7 +95,7 @@ impl Receiver {
 
         // INVARIANT: at this point we are guaranteed that, if there are
         // packets in the queue, the seq of the incoming packet is less than
-        // back.seq + RECEIVER_BUFFERED_PACKETS
+        // back.seq + max_seq_gap
 
         // expand queue to make space for new packet
         if let Some(back) = self.queue.back() {
@@ -143,8 +151,6 @@ impl Receiver {
                     return;
                 };
 
-                eprintln!("something at front of queue!");
-
                 if pts > front.pts {
                     // frame has already begun, we are late
                     let late = pts.duration_since(front.pts);
@@ -168,9 +174,9 @@ impl Receiver {
                 // otherwise we are early
                 let early = front.pts.duration_since(pts);
 
-                if early >= SampleDuration::ONE_PACKET {
-                    // we are early by more than a packet, fill buffer with silence and return
-                    eprintln!("early by more than a packet");
+                if early >= SampleDuration::from_buffer_offset(data.len()) {
+                    // we are early by more than what was asked of us in this
+                    // call, fill with zeroes and return
                     data.fill(0f32);
                     return;
                 }
@@ -191,7 +197,7 @@ impl Receiver {
         // copy data to out
         while data.len() > 0 {
             let Some(front) = self.queue.front_mut() else {
-                eprintln!("nothing at the front of the queue!");
+                eprintln!("queue underrun, stream-side delay too low");
                 data.fill(0f32);
                 return;
             };
