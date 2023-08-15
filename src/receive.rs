@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use crate::protocol::{AudioPacket, self, TimePacket};
+use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use crate::status::Status;
 
@@ -32,6 +32,7 @@ impl QueueEntry {
 }
 
 struct Stream {
+    sid: TimestampMicros,
     start_pts: Timestamp,
     start_seq: u64,
     adjust: TimestampDelta,
@@ -41,6 +42,7 @@ struct Stream {
 impl Stream {
     pub fn start_from_packet(packet: &AudioPacket) -> Self {
         Stream {
+            sid: packet.sid,
             start_pts: Timestamp::from_micros_lossy(packet.pts),
             start_seq: packet.seq,
             adjust: TimestampDelta::zero(),
@@ -86,38 +88,63 @@ impl Receiver {
         }
     }
 
-    pub fn receive_audio(&mut self, packet: &AudioPacket) {
-        if packet.flags != 0 {
-            println!("\runknown flags in packet, ignoring entire packet");
-            return;
-        }
-
+    fn prepare_stream(&mut self, packet: &AudioPacket) -> bool {
         if let Some(stream) = self.stream.as_mut() {
+            if packet.sid.0 < stream.sid.0 {
+                // packet belongs to a previous stream, ignore
+                return false;
+            }
+
+            if packet.sid.0 > stream.sid.0 {
+                // new stream is taking over! switch over to it
+                println!("\nnew stream beginning");
+                self.stream = Some(Stream::start_from_packet(packet));
+                self.status.clear_sync();
+                self.queue.clear();
+                return true;
+            }
+
             if packet.seq < stream.start_seq {
-                println!("\rreceived packet with seq before start, dropping");
-                return;
+                println!("\nreceived packet with seq before start, dropping");
+                return false;
             }
 
             if let Some(front) = self.queue.front() {
                 if packet.seq <= front.seq {
-                    println!("\rreceived packet with seq <= queue front seq, dropping");
-                    return;
+                    println!("\nreceived packet with seq <= queue front seq, dropping");
+                    return false;
                 }
             }
 
             if let Some(back) = self.queue.back() {
                 if back.seq + self.opt.max_seq_gap as u64 <= packet.seq {
-                    println!("\rreceived packet with seq too far in future, resetting stream");
+                    println!("\nreceived packet with seq too far in future, resetting stream");
                     self.stream = Some(Stream::start_from_packet(packet));
                     self.status.clear_sync();
                     self.queue.clear();
                 }
             }
+
+            true
         } else {
             self.stream = Some(Stream::start_from_packet(packet));
             self.status.clear_sync();
+            true
+        }
+    }
+
+    pub fn receive_audio(&mut self, packet: &AudioPacket) {
+        if packet.flags != 0 {
+            println!("\nunknown flags in packet, ignoring entire packet");
+            return;
         }
 
+        if !self.prepare_stream(packet) {
+            return;
+        }
+
+        // we are guaranteed that if prepare_stream returns true,
+        // self.stream is Some:
         let stream = self.stream.as_ref().unwrap();
 
         // INVARIANT: at this point we are guaranteed that, if there are
@@ -186,7 +213,7 @@ impl Receiver {
 
                     if late >= SampleDuration::ONE_PACKET {
                         // we are late by more than a packet, skip to the next
-                        println!("\rlate by more than a packet, pts: {:?}, front pts: {:?}, late: {:?}", pts, front.pts, late);
+                        println!("\nlate by more than a packet, pts: {:?}, front pts: {:?}, late: {:?}", pts, front.pts, late);
                         self.queue.pop_front();
                         continue;
                     }
@@ -228,7 +255,7 @@ impl Receiver {
         // copy data to out
         while data.len() > 0 {
             let Some(front) = self.queue.front_mut() else {
-                println!("\rqueue underrun, stream-side delay too low");
+                println!("\nqueue underrun, stream-side delay too low");
                 data.fill(0f32);
                 return;
             };

@@ -22,10 +22,23 @@ pub const MAGIC_TIME: u32  = 0x01a79ae2;
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct AudioPacket {
+    // magic and flags. magic is always MAGIC_AUDIO and indicates that this
+    // is an audio packet. flags is always 0 for now.
     pub magic: u32,
     pub flags: u32,
+
+    // stream id - set to the start time of a stream, used by receivers to
+    // detect new stream starts, used by senders to detect stream takeovers
+    pub sid: TimestampMicros,
+
+    // packet sequence number - monotonic + gapless, arbitrary start point
     pub seq: u64,
+
+    // presentation timestamp - used by receivers to detect + correct clock
+    // drift
     pub pts: TimestampMicros,
+
+    // audio data:
     pub buffer: PacketBuffer,
 }
 
@@ -40,6 +53,27 @@ pub struct TimePacket {
 }
 
 pub const MAX_PACKET_SIZE: usize = ::std::mem::size_of::<PacketUnion>();
+
+pub enum Packet<'a> {
+    Audio(&'a mut AudioPacket),
+    Time(&'a mut TimePacket),
+}
+
+impl<'a> Packet<'a> {
+    pub fn try_from_bytes_mut(raw: &'a mut [u8]) -> Option<Packet<'a>> {
+        let magic: u32 = *bytemuck::try_from_bytes(&raw[0..4]).ok()?;
+
+        if magic == MAGIC_TIME {
+            return Some(Packet::Time(bytemuck::try_from_bytes_mut(raw).ok()?));
+        }
+
+        if magic == MAGIC_AUDIO {
+            return Some(Packet::Audio(bytemuck::try_from_bytes_mut(raw).ok()?));
+        }
+
+        None
+    }
+}
 
 #[repr(C)]
 union PacketUnion {

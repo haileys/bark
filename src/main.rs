@@ -13,8 +13,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BufferSize, SupportedBufferSize};
 use structopt::StructOpt;
 
-use protocol::{TimestampMicros, AudioPacket, PacketBuffer, TimePacket};
+use protocol::{TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE};
 
+use crate::protocol::Packet;
 use crate::time::{SampleDuration, Timestamp};
 
 #[derive(StructOpt)]
@@ -81,21 +82,30 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
 
     let config = config_for_device(&device)?;
 
-    let bind = opt.bind.unwrap_or(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
+    let bind = opt.bind.unwrap_or(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, opt.port));
 
     let multicast_addr = SocketAddrV4::new(opt.group, opt.port);
 
     let socket = UdpSocket::bind(bind)
         .map_err(|e| RunError::BindSocket(bind, e))?;
 
+    socket.join_multicast_v4(&opt.group, bind.ip())
+        .map_err(RunError::JoinMulticast)?;
+
+    // we don't need it:
+    let _ = socket.set_multicast_loop_v4(false);
+
     let socket = Arc::new(socket);
 
     let delay = Duration::from_millis(opt.delay_ms);
     let delay = SampleDuration::from_std_duration_lossy(delay);
 
+    let sid = TimestampMicros::now();
+
     let mut packet = AudioPacket {
         magic: protocol::MAGIC_AUDIO,
         flags: 0,
+        sid,
         seq: 1,
         pts: TimestampMicros(0),
         buffer: PacketBuffer::zeroed(),
@@ -183,19 +193,32 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
     stream.play().map_err(RunError::Stream)?;
 
     loop {
-        let mut packet = TimePacket::zeroed();
-        let (nbytes, addr) = socket.recv_from(bytemuck::bytes_of_mut(&mut packet))
+        let mut packet_raw = [0u8; MAX_PACKET_SIZE];
+
+        let (nbytes, addr) = socket.recv_from(&mut packet_raw)
             .expect("socket.recv_from");
 
-        if nbytes != std::mem::size_of::<TimePacket>() {
-            continue;
+        match Packet::try_from_bytes_mut(&mut packet_raw[0..nbytes]) {
+            Some(Packet::Audio(packet)) => {
+                // we should only ever receive an audio packet if another
+                // stream is present. check if it should take over
+                if packet.sid.0 > sid.0 {
+                    eprintln!("Another stream has taken over from {addr}, exiting");
+                    break;
+                }
+            }
+            Some(Packet::Time(packet)) => {
+                packet.t3 = TimestampMicros::now();
+                socket.send_to(bytemuck::bytes_of(packet), addr)
+                    .expect("socket.send responding to time packet");
+            }
+            None => {
+                // unknown packet, ignore
+            }
         }
-
-        packet.t3 = TimestampMicros::now();
-
-        socket.send_to(bytemuck::bytes_of(&packet), addr)
-            .expect("socket.send responding to time packet");
     }
+
+    Ok(())
 }
 
 fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
@@ -256,44 +279,27 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
         let (nbytes, addr) = socket.recv_from(&mut packet_raw)
             .map_err(RunError::Socket)?;
 
-        let magic: &u32 = bytemuck::from_bytes(&packet_raw[0..4]);
+        match Packet::try_from_bytes_mut(&mut packet_raw[0..nbytes]) {
+            Some(Packet::Time(packet)) => {
+                if packet.t3.0 == 0 {
+                    // we need to respond to this packet
+                    packet.t2 = TimestampMicros::now();
+                    socket.send_to(bytemuck::bytes_of(packet), addr)
+                        .expect("reply to time packet");
+                    continue;
+                }
 
-        if *magic == protocol::MAGIC_TIME {
-            if nbytes != std::mem::size_of::<TimePacket>() {
-                eprintln!("packet wrong size! ignoring");
-                continue;
+                let mut state = state.lock().unwrap();
+                state.recv.receive_time(packet);
             }
-
-            let packet: &mut TimePacket =
-                bytemuck::from_bytes_mut(&mut packet_raw[0..nbytes]);
-
-            if packet.t3.0 == 0 {
-                packet.t2 = TimestampMicros::now();
-                socket.send_to(bytemuck::bytes_of(packet), addr)
-                    .expect("reply to time packet");
-                continue;
+            Some(Packet::Audio(packet)) => {
+                let mut state = state.lock().unwrap();
+                state.recv.receive_audio(packet);
             }
-
-            let mut state = state.lock().unwrap();
-            state.recv.receive_time(&packet);
-            continue;
+            None => {
+                // unknown packet type, ignore
+            }
         }
-
-        if *magic == protocol::MAGIC_AUDIO {
-            if nbytes != std::mem::size_of::<AudioPacket>() {
-                eprintln!("packet wrong size! ignoring");
-                continue;
-            }
-
-            let packet: &AudioPacket =
-                bytemuck::from_bytes(&packet_raw[0..nbytes]);
-
-            let mut state = state.lock().unwrap();
-            state.recv.receive_audio(packet);
-            continue;
-        }
-
-        eprintln!("unknown packet, dropping");
     }
 }
 
