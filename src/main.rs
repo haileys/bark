@@ -13,7 +13,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BufferSize, SupportedBufferSize};
 use structopt::StructOpt;
 
-use protocol::{TimestampMicros, Packet, PacketBuffer};
+use protocol::{TimestampMicros, AudioPacket, PacketBuffer, TimePacket};
 
 use crate::time::{SampleDuration, Timestamp};
 
@@ -83,14 +83,18 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
 
     let bind = opt.bind.unwrap_or(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
+    let multicast_addr = SocketAddrV4::new(opt.group, opt.port);
+
     let socket = UdpSocket::bind(bind)
         .map_err(|e| RunError::BindSocket(bind, e))?;
+
+    let socket = Arc::new(socket);
 
     let delay = Duration::from_millis(opt.delay_ms);
     let delay = SampleDuration::from_std_duration_lossy(delay);
 
-    let mut packet = Packet {
-        magic: protocol::MAGIC,
+    let mut packet = AudioPacket {
+        magic: protocol::MAGIC_AUDIO,
         flags: 0,
         seq: 1,
         pts: TimestampMicros(0),
@@ -100,49 +104,51 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
     let mut packet_written = SampleDuration::zero();
 
     let stream = device.build_input_stream(&config,
-        move |mut data: &[f32], _: &InputCallbackInfo| {
-            // assert data only contains complete frames:
-            assert!(data.len() % usize::from(protocol::CHANNELS) == 0);
+        {
+            let socket = Arc::clone(&socket);
+            move |mut data: &[f32], _: &InputCallbackInfo| {
+                // assert data only contains complete frames:
+                assert!(data.len() % usize::from(protocol::CHANNELS) == 0);
 
-            let mut timestamp = Timestamp::now().add(delay);
+                let mut timestamp = Timestamp::now().add(delay);
 
-            if packet.pts.0 == 0 {
-                packet.pts = timestamp.to_micros_lossy();
-            }
-
-            while data.len() > 0 {
-                let buffer_offset = packet_written.as_buffer_offset();
-                let buffer_remaining = packet.buffer.0.len() - buffer_offset;
-
-                let copy_count = std::cmp::min(data.len(), buffer_remaining);
-                let buffer_copy_end = buffer_offset + copy_count;
-
-                packet.buffer.0[buffer_offset..buffer_copy_end]
-                    .copy_from_slice(&data[0..copy_count]);
-
-                data = &data[copy_count..];
-                packet_written = SampleDuration::from_buffer_offset(buffer_copy_end);
-                timestamp = timestamp.add(SampleDuration::from_buffer_offset(copy_count));
-
-                if packet_written == SampleDuration::ONE_PACKET {
-                    // packet is full! send:
-                    let dest = SocketAddrV4::new(opt.group, opt.port);
-                    socket.send_to(bytemuck::bytes_of(&packet), dest)
-                        .expect("UdpSocket::send");
-
-                    // reset rest of packet for next:
-                    packet.seq += 1;
+                if packet.pts.0 == 0 {
                     packet.pts = timestamp.to_micros_lossy();
-                    packet_written = SampleDuration::zero();
                 }
-            }
 
-            // if there is data waiting in the packet buffer at the end of the
-            // callback, the pts we just calculated is valid. if the packet is
-            // empty, reset the pts to 0. this signals the next callback to set
-            // pts to the current time when it fires.
-            if packet_written == SampleDuration::zero() {
-                packet.pts.0 = 0;
+                while data.len() > 0 {
+                    let buffer_offset = packet_written.as_buffer_offset();
+                    let buffer_remaining = packet.buffer.0.len() - buffer_offset;
+
+                    let copy_count = std::cmp::min(data.len(), buffer_remaining);
+                    let buffer_copy_end = buffer_offset + copy_count;
+
+                    packet.buffer.0[buffer_offset..buffer_copy_end]
+                        .copy_from_slice(&data[0..copy_count]);
+
+                    data = &data[copy_count..];
+                    packet_written = SampleDuration::from_buffer_offset(buffer_copy_end);
+                    timestamp = timestamp.add(SampleDuration::from_buffer_offset(copy_count));
+
+                    if packet_written == SampleDuration::ONE_PACKET {
+                        // packet is full! send:
+                        socket.send_to(bytemuck::bytes_of(&packet), multicast_addr)
+                            .expect("UdpSocket::send");
+
+                        // reset rest of packet for next:
+                        packet.seq += 1;
+                        packet.pts = timestamp.to_micros_lossy();
+                        packet_written = SampleDuration::zero();
+                    }
+                }
+
+                // if there is data waiting in the packet buffer at the end of the
+                // callback, the pts we just calculated is valid. if the packet is
+                // empty, reset the pts to 0. this signals the next callback to set
+                // pts to the current time when it fires.
+                if packet_written == SampleDuration::zero() {
+                    packet.pts.0 = 0;
+                }
             }
         },
         move |err| {
@@ -151,10 +157,44 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
+    // set up t1 sender thread
+    std::thread::spawn({
+        let socket = Arc::clone(&socket);
+        move || {
+            loop {
+                let t1 = TimestampMicros::now();
+
+                let packet = TimePacket {
+                    magic: protocol::MAGIC_TIME,
+                    flags: 0,
+                    t1,
+                    t2: TimestampMicros(0),
+                    t3: TimestampMicros(0),
+                };
+
+                socket.send_to(bytemuck::bytes_of(&packet), multicast_addr)
+                    .expect("socket.send in time beat thread");
+
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
+    });
+
     stream.play().map_err(RunError::Stream)?;
 
     loop {
-        std::thread::sleep(Duration::from_secs(1));
+        let mut packet = TimePacket::zeroed();
+        let (nbytes, addr) = socket.recv_from(bytemuck::bytes_of_mut(&mut packet))
+            .expect("socket.recv_from");
+
+        if nbytes != std::mem::size_of::<TimePacket>() {
+            continue;
+        }
+
+        packet.t3 = TimestampMicros::now();
+
+        socket.send_to(bytemuck::bytes_of(&packet), addr)
+            .expect("socket.send responding to time packet");
     }
 }
 
@@ -211,18 +251,49 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
         .map_err(RunError::JoinMulticast)?;
 
     loop {
-        let mut packet = Packet::zeroed();
+        let mut packet_raw = [0u8; protocol::MAX_PACKET_SIZE];
 
-        let nread = socket.recv(bytemuck::bytes_of_mut(&mut packet))
+        let (nbytes, addr) = socket.recv_from(&mut packet_raw)
             .map_err(RunError::Socket)?;
 
-        if nread < std::mem::size_of::<Packet>() {
-            eprintln!("packet wrong size! ignoring");
+        let magic: &u32 = bytemuck::from_bytes(&packet_raw[0..4]);
+
+        if *magic == protocol::MAGIC_TIME {
+            if nbytes != std::mem::size_of::<TimePacket>() {
+                eprintln!("packet wrong size! ignoring");
+                continue;
+            }
+
+            let packet: &mut TimePacket =
+                bytemuck::from_bytes_mut(&mut packet_raw[0..nbytes]);
+
+            if packet.t3.0 == 0 {
+                packet.t2 = TimestampMicros::now();
+                socket.send_to(bytemuck::bytes_of(packet), addr)
+                    .expect("reply to time packet");
+                continue;
+            }
+
+            let mut state = state.lock().unwrap();
+            state.recv.receive_time(&packet);
             continue;
         }
 
-        let mut state = state.lock().unwrap();
-        state.recv.push_packet(&packet);
+        if *magic == protocol::MAGIC_AUDIO {
+            if nbytes != std::mem::size_of::<AudioPacket>() {
+                eprintln!("packet wrong size! ignoring");
+                continue;
+            }
+
+            let packet: &AudioPacket =
+                bytemuck::from_bytes(&packet_raw[0..nbytes]);
+
+            let mut state = state.lock().unwrap();
+            state.recv.receive_audio(packet);
+            continue;
+        }
+
+        eprintln!("unknown packet, dropping");
     }
 }
 

@@ -1,6 +1,4 @@
-use std::time::SystemTime;
-
-use crate::protocol::{self, TimestampMicros};
+use crate::protocol::{self, TimestampMicros, TimePacket};
 
 /// A timestamp with implicit denominator SAMPLE_RATE
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -8,17 +6,7 @@ pub struct Timestamp(u64);
 
 impl Timestamp {
     pub fn now() -> Timestamp {
-        // SystemTime::now uses CLOCK_REALTIME on Linux, which is exactly what we want
-        // https://doc.rust-lang.org/std/time/struct.SystemTime.html#platform-specific-behavior
-        let micros = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("SystemTime::now before UNIX_EPOCH!")
-            .as_micros();
-
-        let micros = u64::try_from(micros)
-            .expect("can't narrow timestamp to u64");
-
-        Timestamp::from_micros_lossy(TimestampMicros(micros))
+        Timestamp::from_micros_lossy(TimestampMicros::now())
     }
 }
 
@@ -45,6 +33,10 @@ impl Timestamp {
 
     pub fn duration_since(&self, other: Timestamp) -> SampleDuration {
         SampleDuration(self.0.checked_sub(other.0).unwrap())
+    }
+
+    pub fn adjust(&self, delta: TimestampDelta) -> Timestamp {
+        Timestamp(self.0.checked_add_signed(delta.0).unwrap())
     }
 }
 
@@ -83,5 +75,45 @@ impl SampleDuration {
         assert!(offset % channels == 0);
 
         SampleDuration(u64::try_from(offset / channels).unwrap())
+    }
+}
+
+/// The difference between two machine clocks in microseconds
+#[derive(Debug, Copy, Clone)]
+pub struct ClockDelta(i64);
+
+impl ClockDelta {
+    pub fn as_micros(&self) -> i64 {
+        self.0
+    }
+
+    /// Calculates clock difference between machines based on a complete TimePacket
+    pub fn from_time_packet(packet: &TimePacket) -> ClockDelta {
+        // all fields should be non-zero here, it's a programming error if
+        // they're not.
+        assert!(packet.t1.0 != 0);
+        assert!(packet.t2.0 != 0);
+        assert!(packet.t3.0 != 0);
+
+        let t1_usec = packet.t1.0 as i64;
+        let t2_usec = packet.t2.0 as i64;
+        let t3_usec = packet.t3.0 as i64;
+
+        // algorithm from the Precision Time Protocol page on Wikipedia
+        ClockDelta((t2_usec - t1_usec + t2_usec - t3_usec) / 2)
+    }
+}
+
+/// A duration with denominator SAMPLE_RATE, but it's signed :)
+#[derive(Debug, Copy, Clone)]
+pub struct TimestampDelta(i64);
+
+impl TimestampDelta {
+    pub fn zero() -> TimestampDelta {
+        TimestampDelta(0)
+    }
+
+    pub fn from_clock_delta_lossy(delta: ClockDelta) -> TimestampDelta {
+        TimestampDelta((delta.0 * i64::from(protocol::SAMPLE_RATE.0)) / 1_000_000)
     }
 }

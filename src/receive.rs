@@ -1,13 +1,14 @@
 use std::collections::VecDeque;
+use std::time::Duration;
 
-use crate::protocol::{Packet, self};
-use crate::time::{Timestamp, SampleDuration};
+use crate::protocol::{AudioPacket, self, TimePacket};
+use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use crate::status::Status;
 
 pub struct Receiver {
     opt: ReceiverOpt,
     status: Status,
-    start: Option<StreamStart>,
+    stream: Option<Stream>,
     queue: VecDeque<QueueEntry>,
 }
 
@@ -19,7 +20,7 @@ struct QueueEntry {
     seq: u64,
     pts: Timestamp,
     consumed: SampleDuration,
-    packet: Option<Packet>,
+    packet: Option<AudioPacket>,
 }
 
 impl QueueEntry {
@@ -30,26 +31,34 @@ impl QueueEntry {
     }
 }
 
-struct StreamStart {
-    pts: Timestamp,
-    seq: u64,
+struct Stream {
+    start_pts: Timestamp,
+    start_seq: u64,
+    adjust: TimestampDelta,
     sync: bool,
 }
 
-impl StreamStart {
-    pub fn from_packet(packet: &Packet) -> Self {
-        StreamStart {
-            pts: Timestamp::from_micros_lossy(packet.pts),
-            seq: packet.seq,
+impl Stream {
+    pub fn start_from_packet(packet: &AudioPacket) -> Self {
+        Stream {
+            start_pts: Timestamp::from_micros_lossy(packet.pts),
+            start_seq: packet.seq,
+            adjust: TimestampDelta::zero(),
             sync: false,
         }
     }
 
     pub fn pts_for_seq(&self, seq: u64) -> Timestamp {
-        let delta = seq.checked_sub(self.seq).expect("seq < start seq in pts_for_seq");
-        let duration = SampleDuration::ONE_PACKET.mul(delta);
-        self.pts.add(duration)
+        let seq_delta = seq.checked_sub(self.start_seq).expect("seq < start seq in pts_for_seq");
+        let duration = SampleDuration::ONE_PACKET.mul(seq_delta);
+        self.start_pts.add(duration).adjust(self.adjust)
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct ClockInfo {
+    pub network_latency_usec: i64,
+    pub clock_diff_usec: i64,
 }
 
 impl Receiver {
@@ -58,25 +67,33 @@ impl Receiver {
 
         Receiver {
             opt,
-            start: None,
+            stream: None,
             queue,
             status: Status::new(),
         }
     }
 
-    pub fn push_packet(&mut self, packet: &Packet) {
-        if packet.magic != protocol::MAGIC {
-            println!("\rignoring packet with bad magic");
-            return;
-        }
+    pub fn receive_time(&mut self, packet: &TimePacket) {
+        let network_latency_usec = (packet.t3.0 - packet.t1.0) / 2;
+        let network_latency = Duration::from_micros(network_latency_usec);
+        self.status.record_network_latency(network_latency);
 
+        let clock_delta = ClockDelta::from_time_packet(packet);
+        self.status.record_clock_delta(clock_delta);
+
+        if let Some(stream) = self.stream.as_mut() {
+            stream.adjust = TimestampDelta::from_clock_delta_lossy(clock_delta);
+        }
+    }
+
+    pub fn receive_audio(&mut self, packet: &AudioPacket) {
         if packet.flags != 0 {
             println!("\runknown flags in packet, ignoring entire packet");
             return;
         }
 
-        if let Some(start) = self.start.as_mut() {
-            if packet.seq < start.seq {
+        if let Some(stream) = self.stream.as_mut() {
+            if packet.seq < stream.start_seq {
                 println!("\rreceived packet with seq before start, dropping");
                 return;
             }
@@ -91,17 +108,17 @@ impl Receiver {
             if let Some(back) = self.queue.back() {
                 if back.seq + self.opt.max_seq_gap as u64 <= packet.seq {
                     println!("\rreceived packet with seq too far in future, resetting stream");
-                    self.start = Some(StreamStart::from_packet(packet));
+                    self.stream = Some(Stream::start_from_packet(packet));
                     self.status.clear_sync();
                     self.queue.clear();
                 }
             }
         } else {
-            self.start = Some(StreamStart::from_packet(packet));
+            self.stream = Some(Stream::start_from_packet(packet));
             self.status.clear_sync();
         }
 
-        let start = self.start.as_ref().unwrap();
+        let stream = self.stream.as_ref().unwrap();
 
         // INVARIANT: at this point we are guaranteed that, if there are
         // packets in the queue, the seq of the incoming packet is less than
@@ -115,7 +132,7 @@ impl Receiver {
                 for seq in (back.seq + 1)..=packet.seq {
                     self.queue.push_back(QueueEntry {
                         seq,
-                        pts: start.pts_for_seq(seq),
+                        pts: stream.pts_for_seq(seq),
                         consumed: SampleDuration::zero(),
                         packet: None,
                     })
@@ -125,7 +142,7 @@ impl Receiver {
             // queue is empty, insert missing packet slot for the packet we are about to receive
             self.queue.push_back(QueueEntry {
                 seq: packet.seq,
-                pts: start.pts_for_seq(packet.seq),
+                pts: stream.pts_for_seq(packet.seq),
                 consumed: SampleDuration::zero(),
                 packet: None,
             });
@@ -146,7 +163,7 @@ impl Receiver {
         assert!(data.len() % 2 == 0);
 
         // get stream start timing information:
-        let Some(start) = self.start.as_mut() else {
+        let Some(stream) = self.stream.as_mut() else {
             // stream hasn't started, just fill buffer with silence and return
             data.fill(0f32);
             return;
@@ -155,7 +172,7 @@ impl Receiver {
         let request_end_ts = pts.add(SampleDuration::from_buffer_offset(data.len()));
 
         // sync up to stream if necessary:
-        if !start.sync {
+        if !stream.sync {
             loop {
                 let Some(front) = self.queue.front_mut() else {
                     // nothing at front of queue?
@@ -178,7 +195,7 @@ impl Receiver {
                     front.consumed = late;
 
                     // we are synced
-                    start.sync = true;
+                    stream.sync = true;
                     self.status.set_sync();
                     break;
                 }
@@ -200,7 +217,7 @@ impl Receiver {
                 data = &mut data[zero_count..];
 
                 // then mark ourselves as synced and fall through to regular processing
-                start.sync = true;
+                stream.sync = true;
                 self.status.set_sync();
                 break;
             }
@@ -236,7 +253,7 @@ impl Receiver {
         }
 
         if let Some(copy_end_ts) = copy_end_ts {
-            self.status.record_latency(request_end_ts, copy_end_ts);
+            self.status.record_audio_latency(request_end_ts, copy_end_ts);
         }
 
         self.status.render();
