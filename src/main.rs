@@ -2,6 +2,7 @@ mod receive;
 mod protocol;
 mod time;
 mod status;
+mod resample;
 
 use std::net::{UdpSocket, Ipv4Addr, SocketAddrV4};
 use std::process::ExitCode;

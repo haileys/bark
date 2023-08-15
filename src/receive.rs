@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use crate::status::Status;
+use crate::resample::Resampler;
 
 pub struct Receiver {
     opt: ReceiverOpt,
@@ -37,16 +38,20 @@ struct Stream {
     start_seq: u64,
     adjust: TimestampDelta,
     sync: bool,
+    resampler: Resampler,
 }
 
 impl Stream {
     pub fn start_from_packet(packet: &AudioPacket) -> Self {
+        let resampler = Resampler::new();
+
         Stream {
             sid: packet.sid,
             start_pts: Timestamp::from_micros_lossy(packet.pts),
             start_seq: packet.seq,
             adjust: TimestampDelta::zero(),
             sync: false,
+            resampler,
         }
     }
 
@@ -274,10 +279,14 @@ impl Receiver {
             let copy_count = std::cmp::min(data.len(), buffer_remaining);
             let buffer_copy_end = buffer_offset + copy_count;
 
-            data[0..copy_count].copy_from_slice(&buffer[buffer_offset..buffer_copy_end]);
+            let input = &buffer[buffer_offset..buffer_copy_end];
+            let output = &mut data[0..copy_count];
+            let result = stream.resampler.process_interleaved(input, output)
+                .expect("resample error!");
 
-            data = &mut data[copy_count..];
-            front.consumed = SampleDuration::from_buffer_offset(buffer_copy_end);
+            data = &mut data[result.output_written.as_buffer_offset()..];
+            front.consumed = front.consumed.add(result.input_read);
+
             copy_end_ts = Some(front.pts.add(front.consumed));
 
             // pop packet if fully consumed
@@ -287,9 +296,35 @@ impl Receiver {
         }
 
         if let Some(copy_end_ts) = copy_end_ts {
+            let rate = adjusted_playback_rate(request_end_ts, copy_end_ts);
+            let _ = stream.resampler.set_input_rate(rate);
+
             self.status.record_audio_latency(request_end_ts, copy_end_ts);
         }
 
+        self.status.record_buffer_length(self.queue.iter()
+            .map(|entry| SampleDuration::ONE_PACKET.sub(entry.consumed))
+            .fold(SampleDuration::zero(), |cum, dur| cum.add(dur)));
+
         self.status.render();
     }
+}
+
+fn adjusted_playback_rate(real_ts: Timestamp, play_ts: Timestamp) -> u32 {
+    let base_rate = i64::from(protocol::SAMPLE_RATE.0);
+
+    let max_adjust_percent = 2;
+    let max_rate = (base_rate * (100 + max_adjust_percent)) / 100;
+    let min_rate = (base_rate * (100 - max_adjust_percent)) / 100;
+
+    let packet_delta = real_ts.delta(play_ts).as_frames() as f64 / protocol::FRAMES_PER_PACKET as f64;
+    let packet_delta_sq = packet_delta * packet_delta * f64::signum(packet_delta);
+
+    let adjust = (packet_delta_sq * protocol::FRAMES_PER_PACKET as f64) as i64;
+
+    let adjusted_rate = base_rate + adjust;
+    let adjusted_rate = std::cmp::min(adjusted_rate, max_rate);
+    let adjusted_rate = std::cmp::max(adjusted_rate, min_rate);
+
+    u32::try_from(adjusted_rate).unwrap()
 }
