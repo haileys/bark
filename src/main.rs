@@ -177,6 +177,7 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
                 let packet = TimePacket {
                     magic: protocol::MAGIC_TIME,
                     flags: 0,
+                    sid,
                     t1,
                     t2: TimestampMicros(0),
                     t3: TimestampMicros(0),
@@ -208,9 +209,12 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
                 }
             }
             Some(Packet::Time(packet)) => {
-                packet.t3 = TimestampMicros::now();
-                socket.send_to(bytemuck::bytes_of(packet), addr)
-                    .expect("socket.send responding to time packet");
+                // only handle packet if it belongs to our stream:
+                if packet.sid.0 == sid.0 {
+                    packet.t3 = TimestampMicros::now();
+                    socket.send_to(bytemuck::bytes_of(packet), addr)
+                        .expect("socket.send responding to time packet");
+                }
             }
             None => {
                 // unknown packet, ignore

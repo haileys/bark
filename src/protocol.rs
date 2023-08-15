@@ -47,6 +47,7 @@ pub struct AudioPacket {
 pub struct TimePacket {
     pub magic: u32,
     pub flags: u32,
+    pub sid: TimestampMicros,
     pub t1: TimestampMicros,
     pub t2: TimestampMicros,
     pub t3: TimestampMicros,

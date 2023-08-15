@@ -76,16 +76,23 @@ impl Receiver {
     }
 
     pub fn receive_time(&mut self, packet: &TimePacket) {
+        let Some(stream) = self.stream.as_mut() else {
+            // no stream, nothing we can do with a time packet
+            return;
+        };
+
+        if stream.sid.0 != packet.sid.0 {
+            // not relevant to our stream, ignore
+            return;
+        }
+
         let network_latency_usec = (packet.t3.0 - packet.t1.0) / 2;
         let network_latency = Duration::from_micros(network_latency_usec);
         self.status.record_network_latency(network_latency);
 
         let clock_delta = ClockDelta::from_time_packet(packet);
         self.status.record_clock_delta(clock_delta);
-
-        if let Some(stream) = self.stream.as_mut() {
-            stream.adjust = TimestampDelta::from_clock_delta_lossy(clock_delta);
-        }
+        stream.adjust = TimestampDelta::from_clock_delta_lossy(clock_delta);
     }
 
     fn prepare_stream(&mut self, packet: &AudioPacket) -> bool {
