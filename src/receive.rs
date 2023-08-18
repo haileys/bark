@@ -347,9 +347,8 @@ impl Receiver {
         if let Some(stream_ts) = stream_ts {
             stream.rate_adjust.set_timing(real_ts_after_fill, stream_ts);
 
-            if let Some(rate) = stream.rate_adjust.adjusted_rate() {
-                let _ = stream.resampler.set_input_rate(rate.0);
-            }
+            let rate = stream.rate_adjust.sample_rate();
+            let _ = stream.resampler.set_input_rate(rate.0);
 
             if stream.rate_adjust.slew() {
                 self.status.set_stream(StreamStatus::Slew);
