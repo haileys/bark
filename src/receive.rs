@@ -20,7 +20,7 @@ pub struct ReceiverOpt {
 
 struct QueueEntry {
     seq: u64,
-    pts: Timestamp,
+    pts: Option<Timestamp>,
     consumed: SampleDuration,
     packet: Option<AudioPacket>,
 }
@@ -37,7 +37,6 @@ struct Stream {
     sid: TimestampMicros,
     start_pts: Timestamp,
     start_seq: u64,
-    adjust: TimestampDelta,
     sync: bool,
     resampler: Resampler,
     latency: Aggregate<Duration>,
@@ -52,7 +51,6 @@ impl Stream {
             sid: packet.sid,
             start_pts: Timestamp::from_micros_lossy(packet.pts),
             start_seq: packet.seq,
-            adjust: TimestampDelta::zero(),
             sync: false,
             resampler,
             latency: Aggregate::new(),
@@ -60,14 +58,30 @@ impl Stream {
         }
     }
 
-    pub fn pts_for_seq(&self, seq: u64) -> Timestamp {
-        let seq_delta = seq.checked_sub(self.start_seq).expect("seq < start seq in pts_for_seq");
-        let duration = SampleDuration::ONE_PACKET.mul(seq_delta);
-        self.start_pts.add(duration).adjust(self.adjust)
+    pub fn adjust_pts(&self, pts: Timestamp) -> Option<Timestamp> {
+        self.clock_delta.median().map(|delta| {
+            pts.adjust(TimestampDelta::from_clock_delta_lossy(delta))
+        })
     }
+
+    // pub fn expected_pts_for_seq(&self, seq: u64) -> Timestamp {
+    //     let network_latency = self.network_latency();
+    //     let clock_delta = self.clock_delta();
+
+    //     let seq_since_start = seq.checked_sub(self.start_seq)
+    //         .expect("seq < start seq in pts_for_seq");
+
+    //     let duration_since_start = SampleDuration::ONE_PACKET.mul(seq_since_start);
+
+    //     self.start_pts.add(duration_since_start).adjust(self.adjust)
+    // }
 
     pub fn network_latency(&self) -> Option<Duration> {
         self.latency.median()
+    }
+
+    pub fn clock_delta(&self) -> Option<ClockDelta> {
+        self.clock_delta.median()
     }
 }
 
@@ -206,7 +220,7 @@ impl Receiver {
                 for seq in (back.seq + 1)..=packet.seq {
                     self.queue.push_back(QueueEntry {
                         seq,
-                        pts: stream.pts_for_seq(seq),
+                        pts: None,
                         consumed: SampleDuration::zero(),
                         packet: None,
                     })
@@ -216,7 +230,7 @@ impl Receiver {
             // queue is empty, insert missing packet slot for the packet we are about to receive
             self.queue.push_back(QueueEntry {
                 seq: packet.seq,
-                pts: stream.pts_for_seq(packet.seq),
+                pts: None,
                 consumed: SampleDuration::zero(),
                 packet: None,
             });
@@ -230,6 +244,7 @@ impl Receiver {
         let slot = self.queue.get_mut(idx_for_packet).unwrap();
         assert!(slot.seq == packet.seq);
         slot.packet = Some(*packet);
+        slot.pts = stream.adjust_pts(Timestamp::from_micros_lossy(packet.pts))
     }
 
     pub fn fill_stream_buffer(&mut self, mut data: &mut [f32], pts: Timestamp) {
@@ -244,7 +259,7 @@ impl Receiver {
             return;
         };
 
-        let request_end_ts = pts.add(SampleDuration::from_buffer_offset(data.len()));
+        let real_ts_after_fill = pts.add(SampleDuration::from_buffer_offset(data.len()));
 
         // sync up to stream if necessary:
         if !stream.sync {
@@ -256,9 +271,19 @@ impl Receiver {
                     return;
                 };
 
-                if pts > front.pts {
+                let Some(front_pts) = front.pts else {
+                    // haven't received enough info to adjust pts of queue
+                    // front yet, just pop and ignore it
+                    self.queue.pop_front();
+                    // and output silence for this part:
+                    data.fill(0f32);
+                    self.status.render();
+                    return;
+                };
+
+                if pts > front_pts {
                     // frame has already begun, we are late
-                    let late = pts.duration_since(front.pts);
+                    let late = pts.duration_since(front_pts);
 
                     if late >= SampleDuration::ONE_PACKET {
                         // we are late by more than a packet, skip to the next
@@ -276,7 +301,7 @@ impl Receiver {
                 }
 
                 // otherwise we are early
-                let early = front.pts.duration_since(pts);
+                let early = front_pts.duration_since(pts);
 
                 if early >= SampleDuration::from_buffer_offset(data.len()) {
                     // we are early by more than what was asked of us in this
@@ -299,7 +324,7 @@ impl Receiver {
             }
         }
 
-        let mut copy_end_ts = None;
+        let mut stream_ts = None;
 
         // copy data to out
         while data.len() > 0 {
@@ -325,7 +350,7 @@ impl Receiver {
             data = &mut data[result.output_written.as_buffer_offset()..];
             front.consumed = front.consumed.add(result.input_read);
 
-            copy_end_ts = Some(front.pts.add(front.consumed));
+            stream_ts = front.pts.map(|front_pts| front_pts.add(front.consumed));
 
             // pop packet if fully consumed
             if front.consumed == SampleDuration::ONE_PACKET {
@@ -333,8 +358,8 @@ impl Receiver {
             }
         }
 
-        if let Some(copy_end_ts) = copy_end_ts {
-            if let Some(rate) = adjusted_playback_rate(request_end_ts, copy_end_ts) {
+        if let Some(stream_ts) = stream_ts {
+            if let Some(rate) = adjusted_playback_rate(real_ts_after_fill, stream_ts) {
                 let _ = stream.resampler.set_input_rate(rate);
                 self.status.set_stream(StreamStatus::Slew);
             } else {
@@ -342,7 +367,7 @@ impl Receiver {
                 self.status.set_stream(StreamStatus::Sync);
             }
 
-            self.status.record_audio_latency(request_end_ts, copy_end_ts);
+            self.status.record_audio_latency(real_ts_after_fill, stream_ts);
         }
 
         self.status.record_buffer_length(self.queue.iter()

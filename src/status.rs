@@ -4,7 +4,7 @@ use termcolor::{BufferedStandardStream, WriteColor, ColorSpec, Color};
 
 use crate::time::{Timestamp, ClockDelta, SampleDuration};
 
-const RENDER_INTERVAL: Duration = Duration::from_millis(32);
+const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct Status {
     stream: StreamStatus,
