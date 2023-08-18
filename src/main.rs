@@ -14,7 +14,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BufferSize, SupportedBufferSize};
 use structopt::StructOpt;
 
-use protocol::{TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE};
+use protocol::{TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding};
 
 use crate::protocol::Packet;
 use crate::time::{SampleDuration, Timestamp};
@@ -182,6 +182,7 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
                     t1,
                     t2: TimestampMicros(0),
                     t3: TimestampMicros(0),
+                    _pad: TimePacketPadding::zeroed(),
                 };
 
                 socket.send_to(bytemuck::bytes_of(&packet), multicast_addr)

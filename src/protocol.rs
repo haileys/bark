@@ -51,9 +51,53 @@ pub struct TimePacket {
     pub t1: TimestampMicros,
     pub t2: TimestampMicros,
     pub t3: TimestampMicros,
+
+    // packet delay has a linear relationship to packet size - it's important
+    // that time packets experience as similar delay as possible to audio
+    // packets for most accurate synchronisation, so we add some padding here
+    pub _pad: TimePacketPadding,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct PacketBuffer(pub [f32; SAMPLES_PER_PACKET]);
+
+/// SAFETY: Pod is impl'd for f32, and [T: Pod; N: usize]
+/// but for some reason doesn't like N == SAMPLES_PER_PACKET?
+unsafe impl Pod for PacketBuffer {}
+
+/// SAFETY: Zeroable is impl'd for f32, and [T: Zeroable; N: usize]
+/// but for some reason doesn't like N == SAMPLES_PER_PACKET?
+unsafe impl Zeroable for PacketBuffer {
+    fn zeroed() -> Self {
+        PacketBuffer([0f32; SAMPLES_PER_PACKET])
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TimePacketPadding([u8; 1272]);
+
+// SAFETY: same as above in PacketBuffer
+unsafe impl Pod for TimePacketPadding {}
+
+// SAFETY: same as above in PacketBuffer
+unsafe impl Zeroable for TimePacketPadding {
+    fn zeroed() -> Self {
+        TimePacketPadding([0u8; 1272])
+    }
+}
+
+// assert that AudioPacket and TimePacket are the same size, see comment for
+// TimePacket::_pad field
+static_assertions::assert_eq_size!(AudioPacket, TimePacket);
+
 pub const MAX_PACKET_SIZE: usize = ::std::mem::size_of::<PacketUnion>();
+
+#[repr(C)]
+union PacketUnion {
+    audio: AudioPacket,
+    time: TimePacket,
+}
 
 pub enum Packet<'a> {
     Audio(&'a mut AudioPacket),
@@ -73,28 +117,6 @@ impl<'a> Packet<'a> {
         }
 
         None
-    }
-}
-
-#[repr(C)]
-union PacketUnion {
-    audio: AudioPacket,
-    time: TimePacket,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(transparent)]
-pub struct PacketBuffer(pub [f32; SAMPLES_PER_PACKET]);
-
-/// SAFETY: Pod is impl'd for f32, and [T: Pod; N: usize]
-/// but for some reason doesn't like N == SAMPLES_PER_PACKET?
-unsafe impl Pod for PacketBuffer {}
-
-/// SAFETY: Zeroable is impl'd for f32, and [T: Zeroable; N: usize]
-/// but for some reason doesn't like N == SAMPLES_PER_PACKET?
-unsafe impl Zeroable for PacketBuffer {
-    fn zeroed() -> Self {
-        PacketBuffer([0f32; SAMPLES_PER_PACKET])
     }
 }
 
