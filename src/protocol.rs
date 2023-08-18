@@ -38,6 +38,9 @@ pub struct AudioPacket {
     // drift
     pub pts: TimestampMicros,
 
+    // data timestamp - the stream's clock when packet is sent
+    pub dts: TimestampMicros,
+
     // audio data:
     pub buffer: PacketBuffer,
 }
@@ -76,7 +79,7 @@ unsafe impl Zeroable for PacketBuffer {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TimePacketPadding([u8; 1272]);
+pub struct TimePacketPadding([u8; 1280]);
 
 // SAFETY: same as above in PacketBuffer
 unsafe impl Pod for TimePacketPadding {}
@@ -84,7 +87,7 @@ unsafe impl Pod for TimePacketPadding {}
 // SAFETY: same as above in PacketBuffer
 unsafe impl Zeroable for TimePacketPadding {
     fn zeroed() -> Self {
-        TimePacketPadding([0u8; 1272])
+        TimePacketPadding([0u8; 1280])
     }
 }
 

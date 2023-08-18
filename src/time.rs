@@ -99,7 +99,7 @@ impl SampleDuration {
 }
 
 /// The difference between two machine clocks in microseconds
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Default)]
 pub struct ClockDelta(i64);
 
 impl ClockDelta {

@@ -1,3 +1,4 @@
+use std::array;
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -39,8 +40,8 @@ struct Stream {
     adjust: TimestampDelta,
     sync: bool,
     resampler: Resampler,
-    latency0_usec: Aggregate,
-    latency1_usec: Aggregate,
+    latency: Aggregate<Duration>,
+    clock_delta: Aggregate<ClockDelta>,
 }
 
 impl Stream {
@@ -54,8 +55,8 @@ impl Stream {
             adjust: TimestampDelta::zero(),
             sync: false,
             resampler,
-            latency0_usec: Aggregate::new(),
-            latency1_usec: Aggregate::new(),
+            latency: Aggregate::new(),
+            clock_delta: Aggregate::new(),
         }
     }
 
@@ -66,7 +67,7 @@ impl Stream {
     }
 
     pub fn network_latency(&self) -> Option<Duration> {
-        self.latency0_usec.median().map(Duration::from_micros)
+        self.latency.median()
     }
 }
 
@@ -107,17 +108,19 @@ impl Receiver {
             return;
         };
 
-        let network_latency_usec = rtt_usec / 2;
-        stream.latency0_usec.observe(network_latency_usec);
-        stream.latency1_usec.observe(stream.latency0_usec.median().unwrap());
+        let network_latency = Duration::from_micros(rtt_usec / 2);
+        stream.latency.observe(network_latency);
 
         if let Some(latency) = stream.network_latency() {
             self.status.record_network_latency(latency);
         }
 
         let clock_delta = ClockDelta::from_time_packet(packet);
-        self.status.record_clock_delta(clock_delta);
-        stream.adjust = TimestampDelta::from_clock_delta_lossy(clock_delta);
+        stream.clock_delta.observe(clock_delta);
+
+        if let Some(delta) = stream.clock_delta.median() {
+            self.status.record_clock_delta(delta);
+        }
     }
 
     fn prepare_stream(&mut self, packet: &AudioPacket) -> bool {
@@ -365,18 +368,19 @@ fn adjusted_playback_rate(real_ts: Timestamp, play_ts: Timestamp) -> Option<u32>
     }
 }
 
-struct Aggregate {
-    samples: [u64; 64],
+struct Aggregate<T> {
+    samples: [T; 64],
     count: usize,
     index: usize,
 }
 
-impl Aggregate {
+impl<T: Copy + Default + Ord> Aggregate<T> {
     pub fn new() -> Self {
-        Aggregate { samples: [0u64; 64], count: 0, index: 0 }
+        let samples = array::from_fn(|_| Default::default());
+        Aggregate { samples, count: 0, index: 0 }
     }
 
-    pub fn observe(&mut self, value: u64) {
+    pub fn observe(&mut self, value: T) {
         self.samples[self.index] = value;
 
         if self.count < self.samples.len() {
@@ -387,7 +391,7 @@ impl Aggregate {
         self.index %= self.samples.len();
     }
 
-    pub fn median(&self) -> Option<u64> {
+    pub fn median(&self) -> Option<T> {
         let mut samples = self.samples;
         let samples = &mut samples[0..self.count];
         samples.sort();

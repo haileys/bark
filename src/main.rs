@@ -14,8 +14,7 @@ use std::time::Duration;
 use bytemuck::Zeroable;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BufferSize, SupportedBufferSize};
-use libc::{sched_param, SCHED_FIFO};
-use nix::errno;
+use libc::SCHED_FIFO;
 use nix::sys::socket::sockopt::IpTos;
 use structopt::StructOpt;
 
@@ -116,6 +115,7 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
         sid,
         seq: 1,
         pts: TimestampMicros(0),
+        dts: TimestampMicros(0),
         buffer: PacketBuffer::zeroed(),
     };
 
@@ -149,7 +149,8 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
                     timestamp = timestamp.add(SampleDuration::from_buffer_offset(copy_count));
 
                     if packet_written == SampleDuration::ONE_PACKET {
-                        // packet is full! send:
+                        // packet is full! set dts and send
+                        packet.dts = TimestampMicros::now();
                         socket.send_to(bytemuck::bytes_of(&packet), multicast_addr)
                             .expect("UdpSocket::send");
 
@@ -324,13 +325,7 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
     }
 }
 
-fn max_priority() -> i32 {
-    unsafe { libc::sched_get_priority_max(SCHED_FIFO) }
-}
-
 fn set_realtime_priority(priority: i32) {
-    let max_prio = max_priority();
-
     let mut param = unsafe {
         let mut param = MaybeUninit::uninit();
         let rc = libc::sched_getparam(0, param.as_mut_ptr());
