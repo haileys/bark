@@ -111,13 +111,13 @@ impl ClockDelta {
     pub fn from_time_packet(packet: &TimePacket) -> ClockDelta {
         // all fields should be non-zero here, it's a programming error if
         // they're not.
-        assert!(packet.t1.0 != 0);
-        assert!(packet.t2.0 != 0);
-        assert!(packet.t3.0 != 0);
+        assert!(packet.stream_1.0 != 0);
+        assert!(packet.receive_2.0 != 0);
+        assert!(packet.stream_3.0 != 0);
 
-        let t1_usec = packet.t1.0 as i64;
-        let t2_usec = packet.t2.0 as i64;
-        let t3_usec = packet.t3.0 as i64;
+        let t1_usec = packet.stream_1.0 as i64;
+        let t2_usec = packet.receive_2.0 as i64;
+        let t3_usec = packet.stream_3.0 as i64;
 
         // algorithm from the Precision Time Protocol page on Wikipedia
         ClockDelta((t2_usec - t1_usec + t2_usec - t3_usec) / 2)

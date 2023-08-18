@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
-use crate::status::Status;
+use crate::status::{Status, StreamStatus};
 use crate::resample::Resampler;
 
 pub struct Receiver {
@@ -39,6 +39,7 @@ struct Stream {
     adjust: TimestampDelta,
     sync: bool,
     resampler: Resampler,
+    latency_usec: Aggregate,
 }
 
 impl Stream {
@@ -52,6 +53,7 @@ impl Stream {
             adjust: TimestampDelta::zero(),
             sync: false,
             resampler,
+            latency_usec: Aggregate::default(),
         }
     }
 
@@ -59,6 +61,10 @@ impl Stream {
         let seq_delta = seq.checked_sub(self.start_seq).expect("seq < start seq in pts_for_seq");
         let duration = SampleDuration::ONE_PACKET.mul(seq_delta);
         self.start_pts.add(duration).adjust(self.adjust)
+    }
+
+    pub fn network_latency(&self) -> Duration {
+        Duration::from_micros(self.latency_usec.average())
     }
 }
 
@@ -91,9 +97,18 @@ impl Receiver {
             return;
         }
 
-        let network_latency_usec = (packet.t3.0 - packet.t1.0) / 2;
-        let network_latency = Duration::from_micros(network_latency_usec);
-        self.status.record_network_latency(network_latency);
+        let stream_1_usec = packet.stream_1.0;
+        let stream_3_usec = packet.stream_3.0;
+
+        let Some(rtt_usec) = stream_1_usec.checked_sub(stream_3_usec) else {
+            // invalid packet, ignore
+            return;
+        };
+
+        let network_latency_usec = rtt_usec / 2;
+        stream.latency_usec.observe(network_latency_usec);
+
+        self.status.record_network_latency(stream.network_latency());
 
         let clock_delta = ClockDelta::from_time_packet(packet);
         self.status.record_clock_delta(clock_delta);
@@ -111,7 +126,7 @@ impl Receiver {
                 // new stream is taking over! switch over to it
                 println!("\nnew stream beginning");
                 self.stream = Some(Stream::start_from_packet(packet));
-                self.status.clear_sync();
+                self.status.clear_stream();
                 self.queue.clear();
                 return true;
             }
@@ -132,7 +147,7 @@ impl Receiver {
                 if back.seq + self.opt.max_seq_gap as u64 <= packet.seq {
                     println!("\nreceived packet with seq too far in future, resetting stream");
                     self.stream = Some(Stream::start_from_packet(packet));
-                    self.status.clear_sync();
+                    self.status.clear_stream();
                     self.queue.clear();
                 }
             }
@@ -140,7 +155,7 @@ impl Receiver {
             true
         } else {
             self.stream = Some(Stream::start_from_packet(packet));
-            self.status.clear_sync();
+            self.status.clear_stream();
             true
         }
     }
@@ -205,6 +220,7 @@ impl Receiver {
         let Some(stream) = self.stream.as_mut() else {
             // stream hasn't started, just fill buffer with silence and return
             data.fill(0f32);
+            self.status.render();
             return;
         };
 
@@ -216,6 +232,7 @@ impl Receiver {
                 let Some(front) = self.queue.front_mut() else {
                     // nothing at front of queue?
                     data.fill(0f32);
+                    self.status.render();
                     return;
                 };
 
@@ -225,7 +242,6 @@ impl Receiver {
 
                     if late >= SampleDuration::ONE_PACKET {
                         // we are late by more than a packet, skip to the next
-                        println!("\nlate by more than a packet, pts: {:?}, front pts: {:?}, late: {:?}", pts, front.pts, late);
                         self.queue.pop_front();
                         continue;
                     }
@@ -235,7 +251,7 @@ impl Receiver {
 
                     // we are synced
                     stream.sync = true;
-                    self.status.set_sync();
+                    self.status.set_stream(StreamStatus::Sync);
                     break;
                 }
 
@@ -246,6 +262,7 @@ impl Receiver {
                     // we are early by more than what was asked of us in this
                     // call, fill with zeroes and return
                     data.fill(0f32);
+                    self.status.render();
                     return;
                 }
 
@@ -257,7 +274,7 @@ impl Receiver {
 
                 // then mark ourselves as synced and fall through to regular processing
                 stream.sync = true;
-                self.status.set_sync();
+                self.status.set_stream(StreamStatus::Sync);
                 break;
             }
         }
@@ -267,8 +284,9 @@ impl Receiver {
         // copy data to out
         while data.len() > 0 {
             let Some(front) = self.queue.front_mut() else {
-                println!("\nqueue underrun, stream-side delay too low");
                 data.fill(0f32);
+                self.status.set_stream(StreamStatus::Miss);
+                self.status.render();
                 return;
             };
 
@@ -296,8 +314,13 @@ impl Receiver {
         }
 
         if let Some(copy_end_ts) = copy_end_ts {
-            let rate = adjusted_playback_rate(request_end_ts, copy_end_ts);
-            let _ = stream.resampler.set_input_rate(rate);
+            if let Some(rate) = adjusted_playback_rate(request_end_ts, copy_end_ts) {
+                let _ = stream.resampler.set_input_rate(rate);
+                self.status.set_stream(StreamStatus::Slew);
+            } else {
+                let _ = stream.resampler.set_input_rate(protocol::SAMPLE_RATE.0);
+                self.status.set_stream(StreamStatus::Sync);
+            }
 
             self.status.record_audio_latency(request_end_ts, copy_end_ts);
         }
@@ -310,21 +333,56 @@ impl Receiver {
     }
 }
 
-fn adjusted_playback_rate(real_ts: Timestamp, play_ts: Timestamp) -> u32 {
-    let base_rate = i64::from(protocol::SAMPLE_RATE.0);
+fn adjusted_playback_rate(real_ts: Timestamp, play_ts: Timestamp) -> Option<u32> {
+    let delta = real_ts.delta(play_ts).as_frames();
+    let one_sec = i64::from(protocol::SAMPLE_RATE.0);
+    let one_ms = one_sec / 1000;
 
-    let max_adjust_percent = 2;
-    let max_rate = (base_rate * (100 + max_adjust_percent)) / 100;
-    let min_rate = (base_rate * (100 - max_adjust_percent)) / 100;
+    if delta.abs() > one_sec {
+        // we should desync here
+    }
 
-    let packet_delta = real_ts.delta(play_ts).as_frames() as f64 / protocol::FRAMES_PER_PACKET as f64;
-    let packet_delta_sq = packet_delta * packet_delta * f64::signum(packet_delta);
+    if delta.abs() < one_ms {
+        // no need to adjust
+        return None;
+    }
 
-    let adjust = (packet_delta_sq * protocol::FRAMES_PER_PACKET as f64) as i64;
+    if delta > 0 {
+        // real_ts > play_ts, ie. we are running slow
+        // speed up playback rate by 1%
+        let rate = protocol::SAMPLE_RATE.0 * 101 / 100;
+        return Some(rate);
+    } else {
+        // real_ts < play_ts, ie. we are running fast
+        // speed up playback rate by 1%
+        let rate = protocol::SAMPLE_RATE.0 * 99 / 100;
+        return Some(rate);
+    }
+}
 
-    let adjusted_rate = base_rate + adjust;
-    let adjusted_rate = std::cmp::min(adjusted_rate, max_rate);
-    let adjusted_rate = std::cmp::max(adjusted_rate, min_rate);
+#[derive(Default)]
+struct Aggregate {
+    samples: [u64; 32],
+    count: usize,
+    index: usize,
+}
 
-    u32::try_from(adjusted_rate).unwrap()
+impl Aggregate {
+    pub fn observe(&mut self, value: u64) {
+        self.samples[self.index] += value;
+
+        if self.count < self.samples.len() {
+            self.count += 1;
+        }
+
+        self.index += 1;
+        self.index %= self.samples.len();
+    }
+
+    pub fn average(&self) -> u64 {
+        self.samples[0..self.count]
+            .iter()
+            .copied()
+            .sum::<u64>() / self.count as u64
+    }
 }

@@ -173,15 +173,15 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
         let socket = Arc::clone(&socket);
         move || {
             loop {
-                let t1 = TimestampMicros::now();
+                let now = TimestampMicros::now();
 
                 let packet = TimePacket {
                     magic: protocol::MAGIC_TIME,
                     flags: 0,
                     sid,
-                    t1,
-                    t2: TimestampMicros(0),
-                    t3: TimestampMicros(0),
+                    stream_1: now,
+                    receive_2: TimestampMicros(0),
+                    stream_3: TimestampMicros(0),
                     _pad: TimePacketPadding::zeroed(),
                 };
 
@@ -213,7 +213,7 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
             Some(Packet::Time(packet)) => {
                 // only handle packet if it belongs to our stream:
                 if packet.sid.0 == sid.0 {
-                    packet.t3 = TimestampMicros::now();
+                    packet.stream_3 = TimestampMicros::now();
                     socket.send_to(bytemuck::bytes_of(packet), addr)
                         .expect("socket.send responding to time packet");
                 }
@@ -286,17 +286,17 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
             .map_err(RunError::Socket)?;
 
         match Packet::try_from_bytes_mut(&mut packet_raw[0..nbytes]) {
-            Some(Packet::Time(packet)) => {
-                if packet.t3.0 == 0 {
+            Some(Packet::Time(time)) => {
+                if time.stream_3.0 == 0 {
                     // we need to respond to this packet
-                    packet.t2 = TimestampMicros::now();
-                    socket.send_to(bytemuck::bytes_of(packet), addr)
+                    time.receive_2 = TimestampMicros::now();
+                    socket.send_to(bytemuck::bytes_of(time), addr)
                         .expect("reply to time packet");
                     continue;
                 }
 
                 let mut state = state.lock().unwrap();
-                state.recv.receive_time(packet);
+                state.recv.receive_time(time);
             }
             Some(Packet::Audio(packet)) => {
                 let mut state = state.lock().unwrap();

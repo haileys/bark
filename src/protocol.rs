@@ -1,7 +1,7 @@
-use std::time::SystemTime;
-
 use bytemuck::{Pod, Zeroable};
 use cpal::{SampleFormat, SampleRate, ChannelCount};
+use nix::time::ClockId;
+use nix::sys::time::TimeValLike;
 
 pub const SAMPLE_FORMAT: SampleFormat = SampleFormat::F32;
 pub const SAMPLE_RATE: SampleRate = SampleRate(48000);
@@ -48,9 +48,10 @@ pub struct TimePacket {
     pub magic: u32,
     pub flags: u32,
     pub sid: TimestampMicros,
-    pub t1: TimestampMicros,
-    pub t2: TimestampMicros,
-    pub t3: TimestampMicros,
+
+    pub stream_1: TimestampMicros,
+    pub receive_2: TimestampMicros,
+    pub stream_3: TimestampMicros,
 
     // packet delay has a linear relationship to packet size - it's important
     // that time packets experience as similar delay as possible to audio
@@ -126,15 +127,11 @@ pub struct TimestampMicros(pub u64);
 
 impl TimestampMicros {
     pub fn now() -> TimestampMicros {
-        // SystemTime::now uses CLOCK_REALTIME on Linux, which is exactly what we want
-        // https://doc.rust-lang.org/std/time/struct.SystemTime.html#platform-specific-behavior
-        let micros = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("SystemTime::now before UNIX_EPOCH!")
-            .as_micros();
+        let timespec = nix::time::clock_gettime(ClockId::CLOCK_BOOTTIME)
+            .expect("clock_gettime(CLOCK_BOOTTIME) failed, are we on Linux?");
 
-        let micros = u64::try_from(micros)
-            .expect("can't narrow timestamp to u64");
+        let micros = u64::try_from(timespec.num_microseconds())
+            .expect("cannot convert i64 time value to u64");
 
         TimestampMicros(micros)
     }

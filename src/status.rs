@@ -7,7 +7,7 @@ use crate::time::{Timestamp, ClockDelta, SampleDuration};
 const RENDER_INTERVAL: Duration = Duration::from_millis(32);
 
 pub struct Status {
-    sync: bool,
+    stream: StreamStatus,
     audio_latency_sec: Option<f64>,
     buffer_length_sec: Option<f64>,
     network_latency_sec: Option<f64>,
@@ -15,10 +15,58 @@ pub struct Status {
     last_render: Option<Instant>,
 }
 
+pub enum StreamStatus {
+    Seek,
+    Sync,
+    Slew,
+    Miss,
+}
+
+impl StreamStatus {
+    pub fn color(&self) -> ColorSpec {
+        let mut spec = ColorSpec::new();
+
+        match self {
+            StreamStatus::Seek => {
+                spec.set_dimmed(true);
+            }
+            StreamStatus::Sync => {
+                spec.set_bg(Some(Color::Green))
+                    .set_fg(Some(Color::Rgb(0, 0, 0))) // dark black
+                    .set_bold(true)
+                    .set_intense(true);
+            }
+            StreamStatus::Slew => {
+                spec.set_bg(Some(Color::Yellow))
+                    .set_fg(Some(Color::Rgb(0, 0, 0))) // dark black
+                    .set_bold(true)
+                    .set_intense(true);
+            }
+            StreamStatus::Miss => {
+                spec.set_bg(Some(Color::Red))
+                    .set_fg(Some(Color::Rgb(0, 0, 0))) // dark black
+                    .set_bold(true)
+                    .set_intense(true);
+            }
+        }
+
+        spec
+    }
+
+    pub fn text(&self) -> &'static str {
+        match self {
+            StreamStatus::Seek => "SEEK",
+            StreamStatus::Sync => "SYNC",
+            StreamStatus::Slew => "SLEW",
+            StreamStatus::Miss => "MISS",
+        }
+    }
+}
+
 impl Status {
     pub fn new() -> Self {
         Status {
-            sync: false,
+            stream: StreamStatus::Seek,
             audio_latency_sec: None,
             buffer_length_sec: None,
             network_latency_sec: None,
@@ -27,12 +75,12 @@ impl Status {
         }
     }
 
-    pub fn set_sync(&mut self) {
-        self.sync = true;
+    pub fn set_stream(&mut self, status: StreamStatus) {
+        self.stream = status;
     }
 
-    pub fn clear_sync(&mut self) {
-        self.sync = false;
+    pub fn clear_stream(&mut self) {
+        self.stream = StreamStatus::Seek;
         self.audio_latency_sec = None;
         self.buffer_length_sec = None;
         self.network_latency_sec = None;
@@ -74,22 +122,9 @@ impl Status {
 
         let _ = write!(&mut out, "\r");
 
-        if self.sync {
-            let _ = out.set_color(&ColorSpec::new()
-                .set_bg(Some(Color::Green))
-                .set_fg(Some(Color::Rgb(0, 0, 0))) // dark black
-                .set_bold(true)
-                .set_intense(true));
-
-            let _ = out.write_all(b"  SYNC  ");
-
-            let _ = out.set_color(&ColorSpec::new());
-        } else {
-            let _ = out.set_color(&ColorSpec::new()
-                .set_dimmed(true));
-
-            let _ = out.write_all(b" UNSYNC ");
-        }
+        let _ = out.set_color(&self.stream.color());
+        let _ = write!(&mut out, "  {}  ", self.stream.text());
+        let _ = out.set_color(&ColorSpec::new());
 
         if let Some(latency_sec) = self.audio_latency_sec {
             let _ = write!(&mut out, "  Audio:[{:>8.3} ms]", latency_sec * 1000.0);

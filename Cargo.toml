@@ -9,6 +9,7 @@ edition = "2021"
 bytemuck = { version = "1.13.1", features = ["derive"] }
 cpal = "0.15.2"
 derive_more = "0.99.17"
+nix = { version = "0.26.2", features = ["time"], default-features = false }
 static_assertions = "1.1.0"
 structopt = "0.3.26"
 termcolor = "1.2.0"
