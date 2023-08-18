@@ -66,6 +66,7 @@ dependencies = [
  "bytemuck",
  "cpal",
  "derive_more",
+ "libc",
  "nix 0.26.2",
  "static_assertions",
  "structopt",

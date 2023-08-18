@@ -39,7 +39,8 @@ struct Stream {
     adjust: TimestampDelta,
     sync: bool,
     resampler: Resampler,
-    latency_usec: Aggregate,
+    latency0_usec: Aggregate,
+    latency1_usec: Aggregate,
 }
 
 impl Stream {
@@ -53,7 +54,8 @@ impl Stream {
             adjust: TimestampDelta::zero(),
             sync: false,
             resampler,
-            latency_usec: Aggregate::default(),
+            latency0_usec: Aggregate::new(),
+            latency1_usec: Aggregate::new(),
         }
     }
 
@@ -63,8 +65,8 @@ impl Stream {
         self.start_pts.add(duration).adjust(self.adjust)
     }
 
-    pub fn network_latency(&self) -> Duration {
-        Duration::from_micros(self.latency_usec.average())
+    pub fn network_latency(&self) -> Option<Duration> {
+        self.latency0_usec.median().map(Duration::from_micros)
     }
 }
 
@@ -100,15 +102,18 @@ impl Receiver {
         let stream_1_usec = packet.stream_1.0;
         let stream_3_usec = packet.stream_3.0;
 
-        let Some(rtt_usec) = stream_1_usec.checked_sub(stream_3_usec) else {
+        let Some(rtt_usec) = stream_3_usec.checked_sub(stream_1_usec) else {
             // invalid packet, ignore
             return;
         };
 
         let network_latency_usec = rtt_usec / 2;
-        stream.latency_usec.observe(network_latency_usec);
+        stream.latency0_usec.observe(network_latency_usec);
+        stream.latency1_usec.observe(stream.latency0_usec.median().unwrap());
 
-        self.status.record_network_latency(stream.network_latency());
+        if let Some(latency) = stream.network_latency() {
+            self.status.record_network_latency(latency);
+        }
 
         let clock_delta = ClockDelta::from_time_packet(packet);
         self.status.record_clock_delta(clock_delta);
@@ -360,16 +365,19 @@ fn adjusted_playback_rate(real_ts: Timestamp, play_ts: Timestamp) -> Option<u32>
     }
 }
 
-#[derive(Default)]
 struct Aggregate {
-    samples: [u64; 32],
+    samples: [u64; 64],
     count: usize,
     index: usize,
 }
 
 impl Aggregate {
+    pub fn new() -> Self {
+        Aggregate { samples: [0u64; 64], count: 0, index: 0 }
+    }
+
     pub fn observe(&mut self, value: u64) {
-        self.samples[self.index] += value;
+        self.samples[self.index] = value;
 
         if self.count < self.samples.len() {
             self.count += 1;
@@ -379,10 +387,10 @@ impl Aggregate {
         self.index %= self.samples.len();
     }
 
-    pub fn average(&self) -> u64 {
-        self.samples[0..self.count]
-            .iter()
-            .copied()
-            .sum::<u64>() / self.count as u64
+    pub fn median(&self) -> Option<u64> {
+        let mut samples = self.samples;
+        let samples = &mut samples[0..self.count];
+        samples.sort();
+        samples.get(self.count / 2).copied()
     }
 }

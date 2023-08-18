@@ -4,6 +4,7 @@ mod time;
 mod status;
 mod resample;
 
+use std::mem::MaybeUninit;
 use std::net::{UdpSocket, Ipv4Addr, SocketAddrV4};
 use std::os::fd::AsRawFd;
 use std::process::ExitCode;
@@ -13,6 +14,8 @@ use std::time::Duration;
 use bytemuck::Zeroable;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BufferSize, SupportedBufferSize};
+use libc::{sched_param, SCHED_FIFO};
+use nix::errno;
 use nix::sys::socket::sockopt::IpTos;
 use structopt::StructOpt;
 
@@ -95,11 +98,7 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
     socket.join_multicast_v4(&opt.group, bind.ip())
         .map_err(RunError::JoinMulticast)?;
 
-    const IPTOS_DSCP_EF: i32 = 0xb8;
-    if let Err(e) = nix::sys::socket::setsockopt(socket.as_raw_fd(), IpTos, &IPTOS_DSCP_EF) {
-        eprintln!("warning: failed to set IPTOS_DSCP_EF (expedited forwarding) on broadcast socket: {e:?}");
-    }
-
+    set_expedited_forwarding(&socket);
 
     // we don't need it:
     let _ = socket.set_multicast_loop_v4(false);
@@ -178,6 +177,9 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
 
     // set up t1 sender thread
     std::thread::spawn({
+        // this thread broadcasts time packets
+        set_realtime_priority(99);
+
         let socket = Arc::clone(&socket);
         move || {
             loop {
@@ -202,6 +204,9 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
     });
 
     stream.play().map_err(RunError::Stream)?;
+
+    // this thread responds to time packets
+    set_realtime_priority(99);
 
     loop {
         let mut packet_raw = [0u8; MAX_PACKET_SIZE];
@@ -287,6 +292,8 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
     socket.join_multicast_v4(&opt.group, &bind_ip)
         .map_err(RunError::JoinMulticast)?;
 
+    set_expedited_forwarding(&socket);
+
     loop {
         let mut packet_raw = [0u8; protocol::MAX_PACKET_SIZE];
 
@@ -314,6 +321,40 @@ fn run_receive(opt: ReceiveOpt) -> Result<(), RunError> {
                 // unknown packet type, ignore
             }
         }
+    }
+}
+
+fn max_priority() -> i32 {
+    unsafe { libc::sched_get_priority_max(SCHED_FIFO) }
+}
+
+fn set_realtime_priority(priority: i32) {
+    let max_prio = max_priority();
+
+    let mut param = unsafe {
+        let mut param = MaybeUninit::uninit();
+        let rc = libc::sched_getparam(0, param.as_mut_ptr());
+        if rc < 0 {
+            let err = std::io::Error::last_os_error();
+            eprintln!("set_thread_realtime: error in sched_get_param: {err}");
+            return;
+        }
+        param.assume_init()
+    };
+
+    param.sched_priority = priority;
+
+    let rc = unsafe { libc::sched_setscheduler(0, SCHED_FIFO, &param) };
+    if rc < 0 {
+        let err = std::io::Error::last_os_error();
+        eprintln!("set_realtime_priority: failed to select SCHED_FIFO scheduler: {err}");
+    }
+}
+
+fn set_expedited_forwarding(socket: &UdpSocket) {
+    const IPTOS_DSCP_EF: i32 = 0xb8;
+    if let Err(e) = nix::sys::socket::setsockopt(socket.as_raw_fd(), IpTos, &IPTOS_DSCP_EF) {
+        eprintln!("warning: failed to set IPTOS_DSCP_EF (expedited forwarding) on broadcast socket: {e:?}");
     }
 }
 
