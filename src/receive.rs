@@ -35,7 +35,6 @@ impl QueueEntry {
 
 struct Stream {
     sid: TimestampMicros,
-    start_pts: Timestamp,
     start_seq: u64,
     sync: bool,
     resampler: Resampler,
@@ -49,7 +48,6 @@ impl Stream {
 
         Stream {
             sid: packet.sid,
-            start_pts: Timestamp::from_micros_lossy(packet.pts),
             start_seq: packet.seq,
             sync: false,
             resampler,
@@ -78,10 +76,6 @@ impl Stream {
 
     pub fn network_latency(&self) -> Option<Duration> {
         self.latency.median()
-    }
-
-    pub fn clock_delta(&self) -> Option<ClockDelta> {
-        self.clock_delta.median()
     }
 }
 

@@ -73,10 +73,6 @@ impl SampleDuration {
         std::time::Duration::from_micros(usecs)
     }
 
-    pub fn mul(&self, times: u64) -> Self {
-        SampleDuration(self.0.checked_mul(times).unwrap())
-    }
-
     pub fn as_buffer_offset(&self) -> usize {
         let offset = self.0 * u64::from(protocol::CHANNELS);
         usize::try_from(offset).unwrap()
@@ -129,10 +125,6 @@ impl ClockDelta {
 pub struct TimestampDelta(i64);
 
 impl TimestampDelta {
-    pub fn zero() -> TimestampDelta {
-        TimestampDelta(0)
-    }
-
     pub fn from_clock_delta_lossy(delta: ClockDelta) -> TimestampDelta {
         TimestampDelta((delta.0 * i64::from(protocol::SAMPLE_RATE.0)) / 1_000_000)
     }
