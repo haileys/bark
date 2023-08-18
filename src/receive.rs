@@ -2,6 +2,8 @@ use std::array;
 use std::collections::VecDeque;
 use std::time::Duration;
 
+use cpal::SampleRate;
+
 use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use crate::status::{Status, StreamStatus};
@@ -38,6 +40,7 @@ struct Stream {
     start_seq: u64,
     sync: bool,
     resampler: Resampler,
+    rate_adjust: RateAdjust,
     latency: Aggregate<Duration>,
     clock_delta: Aggregate<ClockDelta>,
 }
@@ -51,6 +54,7 @@ impl Stream {
             start_seq: packet.seq,
             sync: false,
             resampler,
+            rate_adjust: RateAdjust::new(),
             latency: Aggregate::new(),
             clock_delta: Aggregate::new(),
         }
@@ -61,18 +65,6 @@ impl Stream {
             pts.adjust(TimestampDelta::from_clock_delta_lossy(delta))
         })
     }
-
-    // pub fn expected_pts_for_seq(&self, seq: u64) -> Timestamp {
-    //     let network_latency = self.network_latency();
-    //     let clock_delta = self.clock_delta();
-
-    //     let seq_since_start = seq.checked_sub(self.start_seq)
-    //         .expect("seq < start seq in pts_for_seq");
-
-    //     let duration_since_start = SampleDuration::ONE_PACKET.mul(seq_since_start);
-
-    //     self.start_pts.add(duration_since_start).adjust(self.adjust)
-    // }
 
     pub fn network_latency(&self) -> Option<Duration> {
         self.latency.median()
@@ -353,11 +345,15 @@ impl Receiver {
         }
 
         if let Some(stream_ts) = stream_ts {
-            if let Some(rate) = adjusted_playback_rate(real_ts_after_fill, stream_ts) {
-                let _ = stream.resampler.set_input_rate(rate);
+            stream.rate_adjust.set_timing(real_ts_after_fill, stream_ts);
+
+            if let Some(rate) = stream.rate_adjust.adjusted_rate() {
+                let _ = stream.resampler.set_input_rate(rate.0);
+            }
+
+            if stream.rate_adjust.slew() {
                 self.status.set_stream(StreamStatus::Slew);
             } else {
-                let _ = stream.resampler.set_input_rate(protocol::SAMPLE_RATE.0);
                 self.status.set_stream(StreamStatus::Sync);
             }
 
@@ -372,30 +368,72 @@ impl Receiver {
     }
 }
 
-fn adjusted_playback_rate(real_ts: Timestamp, play_ts: Timestamp) -> Option<u32> {
-    let delta = real_ts.delta(play_ts).as_frames();
-    let one_sec = i64::from(protocol::SAMPLE_RATE.0);
-    let one_ms = one_sec / 1000;
+struct RateAdjust {
+    real_ts: Option<Timestamp>,
+    play_ts: Option<Timestamp>,
+    slew: bool,
+}
 
-    if delta.abs() > one_sec {
-        // we should desync here
+impl RateAdjust {
+    pub fn new() -> Self {
+        RateAdjust {
+            real_ts: None,
+            play_ts: None,
+            slew: false
+        }
     }
 
-    if delta.abs() < one_ms {
-        // no need to adjust
-        return None;
+    pub fn set_timing(&mut self, real_ts: Timestamp, play_ts: Timestamp) {
+        self.real_ts = Some(real_ts);
+        self.play_ts = Some(play_ts);
     }
 
-    if delta > 0 {
-        // real_ts > play_ts, ie. we are running slow
-        // speed up playback rate by 1%
-        let rate = protocol::SAMPLE_RATE.0 * 101 / 100;
-        return Some(rate);
-    } else {
-        // real_ts < play_ts, ie. we are running fast
-        // speed up playback rate by 1%
-        let rate = protocol::SAMPLE_RATE.0 * 99 / 100;
-        return Some(rate);
+    pub fn slew(&self) -> bool {
+        self.slew
+    }
+
+    pub fn sample_rate(&mut self) -> SampleRate {
+        self.adjusted_rate().unwrap_or(protocol::SAMPLE_RATE)
+    }
+
+    fn adjusted_rate(&mut self) -> Option<SampleRate> {
+        let real_ts = self.real_ts?;
+        let play_ts = self.play_ts?;
+
+        // parameters, maybe these could be cli args?
+        let start_slew_threshold = Duration::from_micros(2000);
+        let stop_slew_threshold = Duration::from_micros(100);
+        let slew_target_duration = Duration::from_millis(500);
+
+        // turn them into native units
+        let start_slew_threshold = SampleDuration::from_std_duration_lossy(start_slew_threshold);
+        let stop_slew_threshold = SampleDuration::from_std_duration_lossy(stop_slew_threshold);
+
+        let frame_offset = real_ts.delta(play_ts);
+
+        if frame_offset.abs() < stop_slew_threshold {
+            self.slew = false;
+            return None;
+        }
+
+        if frame_offset.abs() < start_slew_threshold && !self.slew {
+            return None;
+        }
+
+        let slew_duration_duration = i64::try_from(slew_target_duration.as_micros()).unwrap();
+        let base_sample_rate = i64::from(protocol::SAMPLE_RATE.0);
+        let rate_offset = frame_offset.as_frames() * 1_000_000 / slew_duration_duration;
+        let rate = base_sample_rate + rate_offset;
+
+        // clamp any potential slow down to 2%, we shouldn't ever get too far
+        // ahead of the stream
+        let rate = std::cmp::max(base_sample_rate * 98 / 100, rate);
+
+        // let the speed up run much higher, but keep it reasonable still
+        let rate = std::cmp::min(base_sample_rate * 2, rate);
+
+        self.slew = true;
+        Some(SampleRate(u32::try_from(rate).unwrap()))
     }
 }
 

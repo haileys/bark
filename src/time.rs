@@ -61,6 +61,10 @@ impl SampleDuration {
         SampleDuration(samples)
     }
 
+    pub fn to_frame_count(&self) -> u64 {
+        self.0
+    }
+
     pub fn from_std_duration_lossy(duration: std::time::Duration) -> SampleDuration {
         let duration = (duration.as_micros() * u128::from(protocol::SAMPLE_RATE.0)) / 1_000_000;
         let duration = u64::try_from(duration).expect("can't narrow duration to u64");
@@ -127,6 +131,10 @@ pub struct TimestampDelta(i64);
 impl TimestampDelta {
     pub fn from_clock_delta_lossy(delta: ClockDelta) -> TimestampDelta {
         TimestampDelta((delta.0 * i64::from(protocol::SAMPLE_RATE.0)) / 1_000_000)
+    }
+
+    pub fn abs(&self) -> SampleDuration {
+        SampleDuration(u64::try_from(self.0.abs()).unwrap())
     }
 
     pub fn as_frames(&self) -> i64 {
