@@ -169,6 +169,8 @@ impl Receiver {
     }
 
     pub fn receive_audio(&mut self, packet: &AudioPacket) {
+        let now = TimestampMicros::now();
+
         if packet.flags != 0 {
             println!("\nunknown flags in packet, ignoring entire packet");
             return;
@@ -181,6 +183,16 @@ impl Receiver {
         // we are guaranteed that if prepare_stream returns true,
         // self.stream is Some:
         let stream = self.stream.as_ref().unwrap();
+
+        if let Some(latency) = stream.network_latency() {
+            if let Some(clock_delta) = stream.clock_delta.median() {
+                let latency_usec = u64::try_from(latency.as_micros()).unwrap();
+                let delta_usec = clock_delta.as_micros();
+                let predict_dts = (now.0 - latency_usec).checked_add_signed(-delta_usec).unwrap();
+                let predict_diff = predict_dts as i64 - packet.dts.0 as i64;
+                self.status.record_dts_prediction_difference(predict_diff)
+            }
+        }
 
         // INVARIANT: at this point we are guaranteed that, if there are
         // packets in the queue, the seq of the incoming packet is less than

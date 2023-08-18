@@ -11,6 +11,7 @@ pub struct Status {
     audio_latency_sec: Option<f64>,
     buffer_length_sec: Option<f64>,
     network_latency_sec: Option<f64>,
+    predict_sec: Option<f64>,
     clock_delta_sec: Option<f64>,
     last_render: Option<Instant>,
 }
@@ -70,6 +71,7 @@ impl Status {
             audio_latency_sec: None,
             buffer_length_sec: None,
             network_latency_sec: None,
+            predict_sec: None,
             clock_delta_sec: None,
             last_render: None,
         }
@@ -100,6 +102,10 @@ impl Status {
 
     pub fn record_network_latency(&mut self, latency: Duration) {
         self.network_latency_sec = Some(latency.as_micros() as f64 / 1_000_000.0);
+    }
+
+    pub fn record_dts_prediction_difference(&mut self, diff_usec: i64) {
+        self.predict_sec = Some(diff_usec as f64 / 1_000_000.0);
     }
 
     pub fn record_clock_delta(&mut self, delta: ClockDelta) {
@@ -142,6 +148,12 @@ impl Status {
             let _ = write!(&mut out, "  Network:[{:>8.3} ms]", latency_sec * 1000.0);
         } else {
             let _ = write!(&mut out, "  Network:[        ms]");
+        }
+
+        if let Some(predict_sec) = self.predict_sec {
+            let _ = write!(&mut out, "  Predict:[{:>8.3} ms]", predict_sec * 1000.0);
+        } else {
+            let _ = write!(&mut out, "  Predict:[        ms]");
         }
 
         if let Some(delta_sec) = self.clock_delta_sec {
