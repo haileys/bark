@@ -5,6 +5,7 @@ mod status;
 mod resample;
 
 use std::net::{UdpSocket, Ipv4Addr, SocketAddrV4};
+use std::os::fd::AsRawFd;
 use std::process::ExitCode;
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
@@ -12,6 +13,7 @@ use std::time::Duration;
 use bytemuck::Zeroable;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{OutputCallbackInfo, StreamConfig, InputCallbackInfo, BufferSize, SupportedBufferSize};
+use nix::sys::socket::sockopt::IpTos;
 use structopt::StructOpt;
 
 use protocol::{TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding};
@@ -92,6 +94,12 @@ fn run_stream(opt: StreamOpt) -> Result<(), RunError> {
 
     socket.join_multicast_v4(&opt.group, bind.ip())
         .map_err(RunError::JoinMulticast)?;
+
+    const IPTOS_DSCP_EF: i32 = 0xb8;
+    if let Err(e) = nix::sys::socket::setsockopt(socket.as_raw_fd(), IpTos, &IPTOS_DSCP_EF) {
+        eprintln!("warning: failed to set IPTOS_DSCP_EF (expedited forwarding) on broadcast socket: {e:?}");
+    }
+
 
     // we don't need it:
     let _ = socket.set_multicast_loop_v4(false);
