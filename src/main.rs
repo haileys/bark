@@ -1,3 +1,4 @@
+mod config;
 mod protocol;
 mod receive;
 mod resample;
@@ -31,6 +32,10 @@ pub enum RunError {
 }
 
 fn main() -> Result<(), ExitCode> {
+    if let Some(config) = config::read() {
+        config::load_into_env(&config);
+    }
+
     let opt = Opt::from_args();
 
     let result = match opt {

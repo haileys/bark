@@ -21,7 +21,7 @@ pub enum ListenError {
 
 #[derive(StructOpt, Debug, Clone)]
 pub struct SocketOpt {
-    #[structopt(long, name="addr")]
+    #[structopt(long, name="addr", env = "BARK_MULTICAST")]
     /// Multicast group address including port, eg. 224.100.100.100:1530
     pub multicast: SocketAddrV4,
 }
