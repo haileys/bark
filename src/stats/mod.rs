@@ -4,7 +4,7 @@ pub mod render;
 
 use std::collections::HashMap;
 use std::mem::size_of;
-use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
+use std::net::{SocketAddrV4, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::io::Write;

@@ -2,7 +2,6 @@ use std::array;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::net::Ipv4Addr;
 
 use bytemuck::Zeroable;
 use cpal::{SampleRate, OutputCallbackInfo};
