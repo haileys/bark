@@ -7,7 +7,7 @@ use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
-use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding};
+use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId};
 use crate::time::{SampleDuration, Timestamp};
 use crate::util;
 use crate::RunError;
@@ -52,7 +52,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let delay = Duration::from_millis(opt.delay_ms);
     let delay = SampleDuration::from_std_duration_lossy(delay);
 
-    let sid = TimestampMicros::now();
+    let sid = SessionId::generate();
 
     let mut packet = AudioPacket {
         magic: protocol::MAGIC_AUDIO,
@@ -164,14 +164,14 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             Some(Packet::Audio(packet)) => {
                 // we should only ever receive an audio packet if another
                 // stream is present. check if it should take over
-                if packet.sid.0 > sid.0 {
+                if packet.sid > sid {
                     eprintln!("Another stream has taken over from {addr}, exiting");
                     break;
                 }
             }
             Some(Packet::Time(packet)) => {
                 // only handle packet if it belongs to our stream:
-                if packet.sid.0 == sid.0 {
+                if packet.sid == sid {
                     packet.stream_3 = TimestampMicros::now();
                     socket.send_to(bytemuck::bytes_of(packet), addr)
                         .expect("socket.send responding to time packet");

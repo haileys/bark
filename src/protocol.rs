@@ -29,7 +29,7 @@ pub struct AudioPacket {
 
     // stream id - set to the start time of a stream, used by receivers to
     // detect new stream starts, used by senders to detect stream takeovers
-    pub sid: TimestampMicros,
+    pub sid: SessionId,
 
     // packet sequence number - monotonic + gapless, arbitrary start point
     pub seq: u64,
@@ -50,7 +50,7 @@ pub struct AudioPacket {
 pub struct TimePacket {
     pub magic: u32,
     pub flags: u32,
-    pub sid: TimestampMicros,
+    pub sid: SessionId,
 
     pub stream_1: TimestampMicros,
     pub receive_2: TimestampMicros,
@@ -137,5 +137,18 @@ impl TimestampMicros {
             .expect("cannot convert i64 time value to u64");
 
         TimestampMicros(micros)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct SessionId(i64);
+
+impl SessionId {
+    pub fn generate() -> Self {
+        let timespec = nix::time::clock_gettime(ClockId::CLOCK_REALTIME)
+            .expect("clock_gettime(CLOCK_REALTIME)");
+
+        SessionId(timespec.num_microseconds())
     }
 }

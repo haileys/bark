@@ -8,7 +8,7 @@ use cpal::{SampleRate, OutputCallbackInfo};
 use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet};
+use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId};
 use crate::resample::Resampler;
 use crate::status::{Status, StreamStatus};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
@@ -38,7 +38,7 @@ impl QueueEntry {
 }
 
 struct Stream {
-    sid: TimestampMicros,
+    sid: SessionId,
     start_seq: u64,
     sync: bool,
     resampler: Resampler,
@@ -97,7 +97,7 @@ impl Receiver {
             return;
         };
 
-        if stream.sid.0 != packet.sid.0 {
+        if stream.sid != packet.sid {
             // not relevant to our stream, ignore
             return;
         }
@@ -127,12 +127,12 @@ impl Receiver {
 
     fn prepare_stream(&mut self, packet: &AudioPacket) -> bool {
         if let Some(stream) = self.stream.as_mut() {
-            if packet.sid.0 < stream.sid.0 {
+            if packet.sid < stream.sid {
                 // packet belongs to a previous stream, ignore
                 return false;
             }
 
-            if packet.sid.0 > stream.sid.0 {
+            if packet.sid > stream.sid {
                 // new stream is taking over! switch over to it
                 println!("\nnew stream beginning");
                 self.stream = Some(Stream::start_from_packet(packet));
