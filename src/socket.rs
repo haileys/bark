@@ -4,6 +4,7 @@ use std::os::fd::AsRawFd;
 
 use nix::poll::{PollFd, PollFlags};
 use socket2::{Socket, Domain, Type};
+use structopt::StructOpt;
 
 // expedited forwarding - IP header field indicating that switches should
 // prioritise our packets for minimal delay
@@ -18,6 +19,13 @@ pub enum ListenError {
     JoinMulticastGroup(Ipv4Addr, io::Error),
 }
 
+#[derive(StructOpt, Debug, Clone)]
+pub struct SocketOpt {
+    #[structopt(long, name="addr")]
+    /// Multicast group address including port, eg. 224.100.100.100:1530
+    pub multicast: SocketAddrV4,
+}
+
 pub struct MultiSocket {
     multicast: SocketAddrV4,
 
@@ -30,7 +38,10 @@ pub struct MultiSocket {
 }
 
 impl MultiSocket {
-    pub fn open(group: Ipv4Addr, port: u16) -> Result<MultiSocket, ListenError> {
+    pub fn open(opt: SocketOpt) -> Result<MultiSocket, ListenError> {
+        let group = *opt.multicast.ip();
+        let port = opt.multicast.port();
+
         let tx = open_multicast(group, SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
         let rx = open_multicast(group, SocketAddrV4::new(group, port))?;
 

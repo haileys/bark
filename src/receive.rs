@@ -11,7 +11,7 @@ use structopt::StructOpt;
 
 use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
 use crate::resample::Resampler;
-use crate::socket::MultiSocket;
+use crate::socket::{MultiSocket, SocketOpt};
 use crate::stats::node::NodeStats;
 use crate::stats::receiver::{ReceiverStats, StreamStatus};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
@@ -471,12 +471,8 @@ impl<T: Copy + Default + Ord> Aggregate<T> {
 
 #[derive(StructOpt, Clone)]
 pub struct ReceiveOpt {
-    #[structopt(long, short)]
-    pub group: Ipv4Addr,
-    #[structopt(long, short)]
-    pub port: u16,
-    #[structopt(long, short)]
-    pub bind: Option<Ipv4Addr>,
+    #[structopt(flatten)]
+    pub socket: SocketOpt,
     #[structopt(long, default_value="12")]
     pub max_seq_gap: usize,
 }
@@ -525,7 +521,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
-    let socket = MultiSocket::open(opt.group, opt.port)
+    let socket = MultiSocket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
     loop {

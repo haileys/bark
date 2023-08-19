@@ -14,21 +14,19 @@ use structopt::StructOpt;
 use termcolor::BufferedStandardStream;
 
 use crate::protocol::{StatsRequestPacket, self, StatsReplyPacket, StatsReplyFlags};
-use crate::socket::MultiSocket;
+use crate::socket::{MultiSocket, SocketOpt};
 use crate::RunError;
 
 use self::render::Padding;
 
 #[derive(StructOpt)]
 pub struct StatsOpt {
-    #[structopt(long, short)]
-    pub group: Ipv4Addr,
-    #[structopt(long, short)]
-    pub port: u16,
+    #[structopt(flatten)]
+    pub socket: SocketOpt,
 }
 
 pub fn run(opt: StatsOpt) -> Result<(), RunError> {
-    let socket = MultiSocket::open(opt.group, opt.port)
+    let socket = MultiSocket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
     let socket = Arc::new(socket);

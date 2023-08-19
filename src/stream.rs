@@ -8,7 +8,7 @@ use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
 use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
-use crate::socket::MultiSocket;
+use crate::socket::{MultiSocket, SocketOpt};
 use crate::stats::node::NodeStats;
 use crate::stats::receiver::ReceiverStats;
 use crate::time::{SampleDuration, Timestamp};
@@ -17,12 +17,8 @@ use crate::RunError;
 
 #[derive(StructOpt)]
 pub struct StreamOpt {
-    #[structopt(long, short)]
-    pub group: Ipv4Addr,
-    #[structopt(long, short)]
-    pub port: u16,
-    #[structopt(long, short)]
-    pub bind: Option<Ipv4Addr>,
+    #[structopt(flatten)]
+    pub socket: SocketOpt,
     #[structopt(long, default_value="20")]
     pub delay_ms: u64,
 }
@@ -35,7 +31,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     let config = util::config_for_device(&device)?;
 
-    let socket = MultiSocket::open(opt.group, opt.port)
+    let socket = MultiSocket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
     let socket = Arc::new(socket);
