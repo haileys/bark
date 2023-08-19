@@ -72,12 +72,12 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
         stats.insert(addr, Entry { time: now, packet: Box::new(reply) });
         stats.retain(|_, ent| ent.valid_at(now));
 
+        let current_entries = stats.len();
+
         let mut out = BufferedStandardStream::stdout(termcolor::ColorChoice::Auto);
 
         // move cursor up:
-        if prev_entries > 0 {
-            let _ = write!(out, "\x1b[{prev_entries}F");
-        }
+        move_cursor_up(&mut out, prev_entries);
 
         // write stats for stream sources first
         let mut stats = stats.iter().collect::<Vec<_>>();
@@ -91,16 +91,37 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
 
         for (addr, entry) in &stats {
             // kill line
-            let _ = write!(out, "\x1b[2K");
+            kill_line(&mut out);
             render::line(&mut out, &padding, &entry.packet, **addr);
-            let _ = write!(out, "\n");
+            new_line(&mut out);
+        }
+
+        if current_entries < prev_entries {
+            let remove_lines = prev_entries - current_entries;
+            for _ in 0..remove_lines {
+                kill_line(&mut out);
+                new_line(&mut out);
+            }
+            move_cursor_up(&mut out, remove_lines);
         }
 
         let _ = out.flush();
     }
 }
 
+fn move_cursor_up(out: &mut BufferedStandardStream, lines: usize) {
+    if lines > 0 {
+        let _ = write!(out, "\x1b[{lines}F");
+    }
+}
 
+fn kill_line(out: &mut BufferedStandardStream) {
+    let _ = write!(out, "\x1b[2K\r");
+}
+
+fn new_line(out: &mut BufferedStandardStream) {
+    let _ = write!(out, "\n");
+}
 
 struct Entry {
     time: Instant,
