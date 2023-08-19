@@ -472,6 +472,8 @@ impl<T: Copy + Default + Ord> Aggregate<T> {
 pub struct ReceiveOpt {
     #[structopt(flatten)]
     pub socket: SocketOpt,
+    #[structopt(long, env = "BARK_RECEIVE_DEVICE")]
+    pub device: Option<String>,
     #[structopt(long, default_value="12")]
     pub max_seq_gap: usize,
 }
@@ -479,6 +481,10 @@ pub struct ReceiveOpt {
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let receiver_id = ReceiverId::generate();
     let node = NodeStats::get();
+
+    if let Some(device) = &opt.device {
+        crate::audio::set_sink_env(device);
+    }
 
     let host = cpal::default_host();
 

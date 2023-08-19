@@ -7,6 +7,21 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct Config {
     multicast: Option<SocketAddr>,
+    #[serde(default)]
+    source: Source,
+    #[serde(default)]
+    receive: Receive,
+}
+
+#[derive(Deserialize, Default)]
+pub struct Source {
+    device: Option<String>,
+    delay_ms: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct Receive {
+    device: Option<String>,
 }
 
 fn set_env_option<T: ToString>(name: &str, value: Option<T>) {
@@ -16,7 +31,10 @@ fn set_env_option<T: ToString>(name: &str, value: Option<T>) {
 }
 
 pub fn load_into_env(config: &Config) {
-    set_env_option("BARK_MULTICAST", config.multicast)
+    set_env_option("BARK_MULTICAST", config.multicast);
+    set_env_option("BARK_SOURCE_DEVICE", config.source.device.as_ref());
+    set_env_option("BARK_SOURCE_DELAY_MS", config.source.delay_ms);
+    set_env_option("BARK_RECEIVE_DEVICE", config.receive.device.as_ref());
 }
 
 fn load_file(path: &Path) -> Option<Config> {

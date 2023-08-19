@@ -18,12 +18,27 @@ use crate::RunError;
 pub struct StreamOpt {
     #[structopt(flatten)]
     pub socket: SocketOpt,
-    #[structopt(long, default_value="20")]
+
+    #[structopt(
+        long,
+        env = "BARK_SOURCE_DEVICE",
+    )]
+    pub device: Option<String>,
+
+    #[structopt(
+        long,
+        env = "BARK_SOURCE_DELAY_MS",
+        default_value = "20",
+    )]
     pub delay_ms: u64,
 }
 
 pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let host = cpal::default_host();
+
+    if let Some(device) = &opt.device {
+        crate::audio::set_source_env(device);
+    }
 
     let device = host.default_input_device()
         .ok_or(RunError::NoDeviceAvailable)?;
