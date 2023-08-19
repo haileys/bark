@@ -7,8 +7,10 @@ use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
-use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId, ReceiverId, TimePhase};
+use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
 use crate::socket::MultiSocket;
+use crate::stats::node::NodeStats;
+use crate::stats::receiver::ReceiverStats;
 use crate::time::{SampleDuration, Timestamp};
 use crate::util;
 use crate::RunError;
@@ -42,6 +44,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let delay = SampleDuration::from_std_duration_lossy(delay);
 
     let sid = SessionId::generate();
+    let node = NodeStats::get();
 
     let mut packet = AudioPacket {
         magic: protocol::MAGIC_AUDIO,
@@ -177,6 +180,20 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                     }
                 }
 
+            }
+            Some(Packet::StatsRequest(_)) => {
+                let reply = StatsReplyPacket {
+                    magic: protocol::MAGIC_STATS_REPLY,
+                    flags: StatsReplyFlags::IS_STREAM,
+                    sid: sid,
+                    receiver: ReceiverStats::zeroed(),
+                    node,
+                };
+
+                let _ = socket.send_to(bytemuck::bytes_of(&reply), addr);
+            }
+            Some(Packet::StatsReply(_)) => {
+                // ignore
             }
             None => {
                 // unknown packet, ignore

@@ -4,21 +4,23 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::net::Ipv4Addr;
 
+use bytemuck::Zeroable;
 use cpal::{SampleRate, OutputCallbackInfo};
 use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase};
+use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
 use crate::resample::Resampler;
 use crate::socket::MultiSocket;
-use crate::status::{Status, StreamStatus};
+use crate::stats::node::NodeStats;
+use crate::stats::receiver::{ReceiverStats, StreamStatus};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use crate::util;
 use crate::RunError;
 
 pub struct Receiver {
     opt: ReceiveOpt,
-    status: Status,
+    stats: ReceiverStats,
     stream: Option<Stream>,
     queue: VecDeque<QueueEntry>,
 }
@@ -88,8 +90,16 @@ impl Receiver {
             opt,
             stream: None,
             queue,
-            status: Status::new(),
+            stats: ReceiverStats::new(),
         }
+    }
+
+    pub fn stats(&self) -> &ReceiverStats {
+        &self.stats
+    }
+
+    pub fn current_session(&self) -> Option<SessionId> {
+        self.stream.as_ref().map(|s| s.sid)
     }
 
     pub fn receive_time(&mut self, packet: &TimePacket) {
@@ -115,15 +125,11 @@ impl Receiver {
         stream.latency.observe(network_latency);
 
         if let Some(latency) = stream.network_latency() {
-            self.status.record_network_latency(latency);
+            self.stats.set_network_latency(latency);
         }
 
         let clock_delta = ClockDelta::from_time_packet(packet);
         stream.clock_delta.observe(clock_delta);
-
-        if let Some(delta) = stream.clock_delta.median() {
-            self.status.record_clock_delta(delta);
-        }
     }
 
     fn prepare_stream(&mut self, packet: &AudioPacket) -> bool {
@@ -137,7 +143,7 @@ impl Receiver {
                 // new stream is taking over! switch over to it
                 println!("\nnew stream beginning");
                 self.stream = Some(Stream::start_from_packet(packet));
-                self.status.clear_stream();
+                self.stats.clear();
                 self.queue.clear();
                 return true;
             }
@@ -158,7 +164,7 @@ impl Receiver {
                 if back.seq + self.opt.max_seq_gap as u64 <= packet.seq {
                     println!("\nreceived packet with seq too far in future, resetting stream");
                     self.stream = Some(Stream::start_from_packet(packet));
-                    self.status.clear_stream();
+                    self.stats.clear();
                     self.queue.clear();
                 }
             }
@@ -166,7 +172,7 @@ impl Receiver {
             true
         } else {
             self.stream = Some(Stream::start_from_packet(packet));
-            self.status.clear_stream();
+            self.stats.clear();
             true
         }
     }
@@ -193,7 +199,7 @@ impl Receiver {
                 let delta_usec = clock_delta.as_micros();
                 let predict_dts = (now.0 - latency_usec).checked_add_signed(-delta_usec).unwrap();
                 let predict_diff = predict_dts as i64 - packet.dts.0 as i64;
-                self.status.record_dts_prediction_difference(predict_diff)
+                self.stats.set_predict_offset(predict_diff)
             }
         }
 
@@ -244,7 +250,6 @@ impl Receiver {
         let Some(stream) = self.stream.as_mut() else {
             // stream hasn't started, just fill buffer with silence and return
             data.fill(0f32);
-            self.status.render();
             return;
         };
 
@@ -256,7 +261,6 @@ impl Receiver {
                 let Some(front) = self.queue.front_mut() else {
                     // nothing at front of queue?
                     data.fill(0f32);
-                    self.status.render();
                     return;
                 };
 
@@ -266,7 +270,6 @@ impl Receiver {
                     self.queue.pop_front();
                     // and output silence for this part:
                     data.fill(0f32);
-                    self.status.render();
                     return;
                 };
 
@@ -285,7 +288,7 @@ impl Receiver {
 
                     // we are synced
                     stream.sync = true;
-                    self.status.set_stream(StreamStatus::Sync);
+                    self.stats.set_stream(StreamStatus::Sync);
                     break;
                 }
 
@@ -296,7 +299,6 @@ impl Receiver {
                     // we are early by more than what was asked of us in this
                     // call, fill with zeroes and return
                     data.fill(0f32);
-                    self.status.render();
                     return;
                 }
 
@@ -308,7 +310,7 @@ impl Receiver {
 
                 // then mark ourselves as synced and fall through to regular processing
                 stream.sync = true;
-                self.status.set_stream(StreamStatus::Sync);
+                self.stats.set_stream(StreamStatus::Sync);
                 break;
             }
         }
@@ -319,8 +321,7 @@ impl Receiver {
         while data.len() > 0 {
             let Some(front) = self.queue.front_mut() else {
                 data.fill(0f32);
-                self.status.set_stream(StreamStatus::Miss);
-                self.status.render();
+                self.stats.set_stream(StreamStatus::Miss);
                 return;
             };
 
@@ -354,19 +355,17 @@ impl Receiver {
             let _ = stream.resampler.set_input_rate(rate.0);
 
             if stream.rate_adjust.slew() {
-                self.status.set_stream(StreamStatus::Slew);
+                self.stats.set_stream(StreamStatus::Slew);
             } else {
-                self.status.set_stream(StreamStatus::Sync);
+                self.stats.set_stream(StreamStatus::Sync);
             }
 
-            self.status.record_audio_latency(real_ts_after_fill, stream_ts);
+            self.stats.set_audio_latency(real_ts_after_fill, stream_ts);
         }
 
-        self.status.record_buffer_length(self.queue.iter()
+        self.stats.set_buffer_length(self.queue.iter()
             .map(|entry| SampleDuration::ONE_PACKET.sub(entry.consumed))
             .fold(SampleDuration::zero(), |cum, dur| cum.add(dur)));
-
-        self.status.render();
     }
 }
 
@@ -484,6 +483,7 @@ pub struct ReceiveOpt {
 
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let receiver_id = ReceiverId::generate();
+    let node = NodeStats::get();
 
     let host = cpal::default_host();
 
@@ -562,6 +562,25 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
             Some(Packet::Audio(packet)) => {
                 let mut state = state.lock().unwrap();
                 state.recv.receive_audio(packet);
+            }
+            Some(Packet::StatsRequest(_)) => {
+                let state = state.lock().unwrap();
+                let sid = state.recv.current_session();
+                let stats = *state.recv.stats();
+                drop(state);
+
+                let reply = StatsReplyPacket {
+                    magic: protocol::MAGIC_STATS_REPLY,
+                    flags: StatsReplyFlags::IS_RECEIVER,
+                    sid: sid.unwrap_or(SessionId::zeroed()),
+                    receiver: stats,
+                    node,
+                };
+
+                let _ = socket.send_to(bytemuck::bytes_of(&reply), addr);
+            }
+            Some(Packet::StatsReply(_)) => {
+                // ignore
             }
             None => {
                 // unknown packet type, ignore

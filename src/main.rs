@@ -1,11 +1,11 @@
 mod protocol;
 mod receive;
 mod resample;
-mod status;
+mod socket;
+mod stats;
 mod stream;
 mod time;
 mod util;
-mod socket;
 
 use std::process::ExitCode;
 
@@ -15,6 +15,7 @@ use structopt::StructOpt;
 enum Opt {
     Stream(stream::StreamOpt),
     Receive(receive::ReceiveOpt),
+    Stats(stats::StatsOpt),
 }
 
 #[derive(Debug)]
@@ -34,6 +35,7 @@ fn main() -> Result<(), ExitCode> {
     let result = match opt {
         Opt::Stream(opt) => stream::run(opt),
         Opt::Receive(opt) => receive::run(opt),
+        Opt::Stats(opt) => stats::run(opt),
     };
 
     result.map_err(|err| {

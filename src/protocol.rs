@@ -3,14 +3,18 @@ use cpal::{SampleFormat, SampleRate, ChannelCount};
 use nix::time::ClockId;
 use nix::sys::time::TimeValLike;
 
+use crate::stats;
+
 pub const SAMPLE_FORMAT: SampleFormat = SampleFormat::F32;
 pub const SAMPLE_RATE: SampleRate = SampleRate(48000);
 pub const CHANNELS: ChannelCount = 2;
 pub const FRAMES_PER_PACKET: usize = 160;
 pub const SAMPLES_PER_PACKET: usize = CHANNELS as usize * FRAMES_PER_PACKET;
 
-pub const MAGIC_AUDIO: u32   = 0x00a79ae2;
-pub const MAGIC_TIME: u32    = 0x01a79ae2;
+pub const MAGIC_AUDIO: u32       = 0x00a79ae2;
+pub const MAGIC_TIME: u32        = 0x01a79ae2;
+pub const MAGIC_STATS_REQ: u32   = 0x02a79ae2;
+pub const MAGIC_STATS_REPLY: u32 = 0x03a79ae2;
 
 /// our network Packet struct
 /// we don't need to worry about endianness, because according to the rust docs:
@@ -99,6 +103,32 @@ impl TimePacket {
     }
 }
 
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[repr(C)]
+pub struct StatsRequestPacket {
+    pub magic: u32,
+}
+
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[repr(C)]
+pub struct StatsReplyPacket {
+    pub magic: u32,
+    pub flags: StatsReplyFlags,
+
+    pub sid: SessionId,
+    pub receiver: stats::receiver::ReceiverStats,
+    pub node: stats::node::NodeStats,
+}
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, Zeroable, Pod)]
+    #[repr(transparent)]
+    pub struct StatsReplyFlags: u32 {
+        const IS_RECEIVER = 0x01;
+        const IS_STREAM   = 0x02;
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct PacketBuffer(pub [f32; SAMPLES_PER_PACKET]);
@@ -136,13 +166,17 @@ pub const MAX_PACKET_SIZE: usize = ::std::mem::size_of::<PacketUnion>();
 
 #[repr(C)]
 union PacketUnion {
-    audio: AudioPacket,
-    time: TimePacket,
+    _1: AudioPacket,
+    _2: TimePacket,
+    _3: StatsRequestPacket,
+    _4: StatsReplyPacket,
 }
 
 pub enum Packet<'a> {
     Audio(&'a mut AudioPacket),
     Time(&'a mut TimePacket),
+    StatsRequest(&'a mut StatsRequestPacket),
+    StatsReply(&'a mut StatsReplyPacket),
 }
 
 impl<'a> Packet<'a> {
@@ -155,6 +189,14 @@ impl<'a> Packet<'a> {
 
         if magic == MAGIC_AUDIO {
             return Some(Packet::Audio(bytemuck::try_from_bytes_mut(raw).ok()?));
+        }
+
+        if magic == MAGIC_STATS_REQ {
+            return Some(Packet::StatsRequest(bytemuck::try_from_bytes_mut(raw).ok()?));
+        }
+
+        if magic == MAGIC_STATS_REPLY {
+            return Some(Packet::StatsReply(bytemuck::try_from_bytes_mut(raw).ok()?));
         }
 
         None
