@@ -5,8 +5,8 @@ mod status;
 mod stream;
 mod time;
 mod util;
+mod socket;
 
-use std::net::SocketAddrV4;
 use std::process::ExitCode;
 
 use structopt::StructOpt;
@@ -19,8 +19,7 @@ enum Opt {
 
 #[derive(Debug)]
 pub enum RunError {
-    BindSocket(SocketAddrV4, std::io::Error),
-    JoinMulticast(std::io::Error),
+    Listen(socket::ListenError),
     NoDeviceAvailable,
     NoSupportedStreamConfig,
     StreamConfigs(cpal::SupportedStreamConfigsError),

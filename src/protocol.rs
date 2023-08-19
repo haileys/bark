@@ -9,8 +9,8 @@ pub const CHANNELS: ChannelCount = 2;
 pub const FRAMES_PER_PACKET: usize = 160;
 pub const SAMPLES_PER_PACKET: usize = CHANNELS as usize * FRAMES_PER_PACKET;
 
-pub const MAGIC_AUDIO: u32 = 0x00a79ae2;
-pub const MAGIC_TIME: u32  = 0x01a79ae2;
+pub const MAGIC_AUDIO: u32   = 0x00a79ae2;
+pub const MAGIC_TIME: u32    = 0x01a79ae2;
 
 /// our network Packet struct
 /// we don't need to worry about endianness, because according to the rust docs:
@@ -51,6 +51,7 @@ pub struct TimePacket {
     pub magic: u32,
     pub flags: u32,
     pub sid: SessionId,
+    pub rid: ReceiverId,
 
     pub stream_1: TimestampMicros,
     pub receive_2: TimestampMicros,
@@ -60,6 +61,42 @@ pub struct TimePacket {
     // that time packets experience as similar delay as possible to audio
     // packets for most accurate synchronisation, so we add some padding here
     pub _pad: TimePacketPadding,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TimePhase {
+    /// The initial phase, the stream server sends out a broadcast time packet
+    /// withn only `stream_1` set
+    Broadcast,
+
+    /// A receiver replies, setting `receive_2`
+    ReceiverReply,
+
+    /// Finally, the stream replies (over unicast) again, setting `stream_3`
+    StreamReply,
+}
+
+impl TimePacket {
+    pub fn phase(&self) -> Option<TimePhase> {
+        let t1 = self.stream_1.0;
+        let t2 = self.receive_2.0;
+        let t3 = self.stream_3.0;
+
+        if t1 != 0 && t2 == 0 && t3 == 0 {
+            return Some(TimePhase::Broadcast);
+        }
+
+        if t1 != 0 && t2 != 0 && t3 == 0 {
+            return Some(TimePhase::ReceiverReply);
+        }
+
+        if t1 != 0 && t2 != 0 && t3 != 0 {
+            return Some(TimePhase::StreamReply);
+        }
+
+        // incoherent + invalid time packet
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -79,7 +116,7 @@ unsafe impl Zeroable for PacketBuffer {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TimePacketPadding([u8; 1280]);
+pub struct TimePacketPadding([u8; 1272]);
 
 // SAFETY: same as above in PacketBuffer
 unsafe impl Pod for TimePacketPadding {}
@@ -87,7 +124,7 @@ unsafe impl Pod for TimePacketPadding {}
 // SAFETY: same as above in PacketBuffer
 unsafe impl Zeroable for TimePacketPadding {
     fn zeroed() -> Self {
-        TimePacketPadding([0u8; 1280])
+        TimePacketPadding([0u8; 1272])
     }
 }
 
@@ -137,6 +174,28 @@ impl TimestampMicros {
             .expect("cannot convert i64 time value to u64");
 
         TimestampMicros(micros)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[repr(transparent)]
+pub struct ReceiverId(u64);
+
+impl ReceiverId {
+    pub fn broadcast() -> Self {
+        ReceiverId(0)
+    }
+
+    pub fn is_broadcast(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn matches(&self, this: &ReceiverId) -> bool {
+        self.is_broadcast() || self.0 == this.0
+    }
+
+    pub fn generate() -> Self {
+        ReceiverId(rand::random())
     }
 }
 

@@ -1,11 +1,8 @@
 use std::mem::MaybeUninit;
-use std::net::UdpSocket;
-use std::os::fd::AsRawFd;
 
 use cpal::{StreamConfig, BufferSize, SupportedBufferSize};
 use cpal::traits::DeviceTrait;
 use libc::SCHED_FIFO;
-use nix::sys::socket::sockopt::IpTos;
 
 use crate::RunError;
 use crate::protocol;
@@ -28,13 +25,6 @@ pub fn set_realtime_priority(priority: i32) {
     if rc < 0 {
         let err = std::io::Error::last_os_error();
         eprintln!("set_realtime_priority: failed to select SCHED_FIFO scheduler: {err}");
-    }
-}
-
-pub fn set_expedited_forwarding(socket: &UdpSocket) {
-    const IPTOS_DSCP_EF: i32 = 0xb8;
-    if let Err(e) = nix::sys::socket::setsockopt(socket.as_raw_fd(), IpTos, &IPTOS_DSCP_EF) {
-        eprintln!("warning: failed to set IPTOS_DSCP_EF (expedited forwarding) on broadcast socket: {e:?}");
     }
 }
 

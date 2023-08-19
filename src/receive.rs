@@ -2,14 +2,15 @@ use std::array;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
+use std::net::Ipv4Addr;
 
 use cpal::{SampleRate, OutputCallbackInfo};
 use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId};
+use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase};
 use crate::resample::Resampler;
+use crate::socket::MultiSocket;
 use crate::status::{Status, StreamStatus};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use crate::util;
@@ -482,6 +483,8 @@ pub struct ReceiveOpt {
 }
 
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
+    let receiver_id = ReceiverId::generate();
+
     let host = cpal::default_host();
 
     let device = host.default_output_device()
@@ -522,16 +525,8 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
-    let bind_ip = opt.bind.unwrap_or(Ipv4Addr::UNSPECIFIED);
-    let bind_addr = SocketAddrV4::new(bind_ip, opt.port);
-
-    let socket = UdpSocket::bind(bind_addr)
-        .map_err(|e| RunError::BindSocket(bind_addr, e))?;
-
-    socket.join_multicast_v4(&opt.group, &bind_ip)
-        .map_err(RunError::JoinMulticast)?;
-
-    util::set_expedited_forwarding(&socket);
+    let socket = MultiSocket::open(opt.group, opt.port)
+        .map_err(RunError::Listen)?;
 
     loop {
         let mut packet_raw = [0u8; protocol::MAX_PACKET_SIZE];
@@ -541,16 +536,28 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
         match Packet::try_from_bytes_mut(&mut packet_raw[0..nbytes]) {
             Some(Packet::Time(time)) => {
-                if time.stream_3.0 == 0 {
-                    // we need to respond to this packet
-                    time.receive_2 = TimestampMicros::now();
-                    socket.send_to(bytemuck::bytes_of(time), addr)
-                        .expect("reply to time packet");
+                if !time.rid.matches(&receiver_id) {
+                    // not for us - time packets are usually unicast,
+                    // but there can be multiple receivers on a machine
                     continue;
                 }
 
-                let mut state = state.lock().unwrap();
-                state.recv.receive_time(time);
+                match time.phase() {
+                    Some(TimePhase::Broadcast) => {
+                        time.receive_2 = TimestampMicros::now();
+                        time.rid = receiver_id;
+                        socket.send_to(bytemuck::bytes_of(time), addr)
+                            .expect("reply to time packet");
+                    }
+                    Some(TimePhase::StreamReply) => {
+                        let mut state = state.lock().unwrap();
+                        state.recv.receive_time(time);
+                    }
+                    _ => {
+                        // not for us - must be destined for another process
+                        // on same machine
+                    }
+                }
             }
             Some(Packet::Audio(packet)) => {
                 let mut state = state.lock().unwrap();

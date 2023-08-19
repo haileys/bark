@@ -1,4 +1,4 @@
-use std::net::{UdpSocket, Ipv4Addr, SocketAddrV4};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +7,8 @@ use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
-use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId};
+use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId, ReceiverId, TimePhase};
+use crate::socket::MultiSocket;
 use crate::time::{SampleDuration, Timestamp};
 use crate::util;
 use crate::RunError;
@@ -19,7 +20,7 @@ pub struct StreamOpt {
     #[structopt(long, short)]
     pub port: u16,
     #[structopt(long, short)]
-    pub bind: Option<SocketAddrV4>,
+    pub bind: Option<Ipv4Addr>,
     #[structopt(long, default_value="20")]
     pub delay_ms: u64,
 }
@@ -32,20 +33,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     let config = util::config_for_device(&device)?;
 
-    let bind = opt.bind.unwrap_or(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, opt.port));
-
-    let multicast_addr = SocketAddrV4::new(opt.group, opt.port);
-
-    let socket = UdpSocket::bind(bind)
-        .map_err(|e| RunError::BindSocket(bind, e))?;
-
-    socket.join_multicast_v4(&opt.group, bind.ip())
-        .map_err(RunError::JoinMulticast)?;
-
-    util::set_expedited_forwarding(&socket);
-
-    // we don't need it:
-    let _ = socket.set_multicast_loop_v4(false);
+    let socket = MultiSocket::open(opt.group, opt.port)
+        .map_err(RunError::Listen)?;
 
     let socket = Arc::new(socket);
 
@@ -96,8 +85,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                     if packet_written == SampleDuration::ONE_PACKET {
                         // packet is full! set dts and send
                         packet.dts = TimestampMicros::now();
-                        socket.send_to(bytemuck::bytes_of(&packet), multicast_addr)
-                            .expect("UdpSocket::send");
+                        socket.broadcast(bytemuck::bytes_of(&packet)).expect("broadcast");
 
                         // reset rest of packet for next:
                         packet.seq += 1;
@@ -135,14 +123,15 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                     magic: protocol::MAGIC_TIME,
                     flags: 0,
                     sid,
+                    rid: ReceiverId::broadcast(),
                     stream_1: now,
                     receive_2: TimestampMicros(0),
                     stream_3: TimestampMicros(0),
                     _pad: TimePacketPadding::zeroed(),
                 };
 
-                socket.send_to(bytemuck::bytes_of(&packet), multicast_addr)
-                    .expect("socket.send in time beat thread");
+                socket.broadcast(bytemuck::bytes_of(&packet))
+                    .expect("broadcast time");
 
                 std::thread::sleep(Duration::from_millis(200));
             }
@@ -171,11 +160,23 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             }
             Some(Packet::Time(packet)) => {
                 // only handle packet if it belongs to our stream:
-                if packet.sid == sid {
-                    packet.stream_3 = TimestampMicros::now();
-                    socket.send_to(bytemuck::bytes_of(packet), addr)
-                        .expect("socket.send responding to time packet");
+                if packet.sid != sid {
+                    continue;
                 }
+
+                match packet.phase() {
+                    Some(TimePhase::ReceiverReply) => {
+                        packet.stream_3 = TimestampMicros::now();
+
+                        socket.send_to(bytemuck::bytes_of(packet), addr)
+                            .expect("socket.send responding to time packet");
+                    }
+                    _ => {
+                        // any other packet here must be destined for
+                        // another instance on the same machine
+                    }
+                }
+
             }
             None => {
                 // unknown packet, ignore

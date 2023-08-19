@@ -10,7 +10,9 @@ bytemuck = { version = "1.13.1", features = ["derive"] }
 cpal = "0.15.2"
 derive_more = "0.99.17"
 libc = "0.2.147"
-nix = { version = "0.26.2", features = ["time", "socket", "net"], default-features = false }
+nix = { version = "0.26.2", features = ["time", "socket", "net", "poll"], default-features = false }
+rand = "0.8.5"
+socket2 = "0.5.3"
 static_assertions = "1.1.0"
 structopt = "0.3.26"
 termcolor = "1.2.0"
