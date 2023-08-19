@@ -4,6 +4,7 @@ mod resample;
 mod socket;
 mod stats;
 mod stream;
+mod thread;
 mod time;
 mod util;
 

@@ -498,7 +498,14 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let _stream = device.build_output_stream(&config,
         {
             let state = state.clone();
+            let mut initialized_thread = false;
             move |data: &mut [f32], info: &OutputCallbackInfo| {
+                if !initialized_thread {
+                    crate::thread::set_name("bark/audio");
+                    crate::thread::set_realtime_priority();
+                    initialized_thread = true;
+                }
+
                 let stream_timestamp = info.timestamp();
 
                 let output_latency = stream_timestamp.playback
@@ -522,6 +529,9 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
     let socket = MultiSocket::open(opt.socket)
         .map_err(RunError::Listen)?;
+
+    crate::thread::set_name("bark/network");
+    crate::thread::set_realtime_priority();
 
     loop {
         let mut packet_raw = [0u8; protocol::MAX_PACKET_SIZE];

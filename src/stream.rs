@@ -56,7 +56,14 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let stream = device.build_input_stream(&config,
         {
             let socket = Arc::clone(&socket);
+            let mut initialized_thread = false;
             move |mut data: &[f32], _: &InputCallbackInfo| {
+                if !initialized_thread {
+                    crate::thread::set_name("bark/audio");
+                    crate::thread::set_realtime_priority();
+                    initialized_thread = true;
+                }
+
                 // assert data only contains complete frames:
                 assert!(data.len() % usize::from(protocol::CHANNELS) == 0);
 
@@ -109,8 +116,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     // set up t1 sender thread
     std::thread::spawn({
-        // this thread broadcasts time packets
-        util::set_realtime_priority(99);
+        crate::thread::set_name("bark/clock");
+        crate::thread::set_realtime_priority();
 
         let socket = Arc::clone(&socket);
         move || {
@@ -138,8 +145,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     stream.play().map_err(RunError::Stream)?;
 
-    // this thread responds to time packets
-    util::set_realtime_priority(99);
+    crate::thread::set_name("bark/network");
+    crate::thread::set_realtime_priority();
 
     loop {
         let mut packet_raw = [0u8; MAX_PACKET_SIZE];
