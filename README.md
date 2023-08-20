@@ -4,12 +4,9 @@ low latency multi-receiver synchronised audio streaming for local networks.
 
 * Transmits uncompressed 48khz stereo audio over UDP multicast
 
-* Requires precisely synchronised system clocks. Implementation recommendation is to run a [chronyd](https://wiki.archlinux.org/title/Chrony) server locally, it can achieve precision in the tens of microseconds over LANs
+### Running the server under Pipewire or Pulse
 
-
-### Running the server under Pipewire
-
-Note: you must have `pipewire-alsa` installed for this to work.
+Note: if using Pipewire, you must have `pipewire-alsa` installed for this to work.
 
 * First create a virtual node for Bark to receive audio from. You will configure applications to send audio to this node.
 
@@ -17,34 +14,73 @@ Note: you must have `pipewire-alsa` installed for this to work.
     $ pactl load-module module-null-sink media.class=Audio/Duplex sink_name=Bark audio.position=FL,FR
     ```
 
-* Then find the Pipewire node ID for the new virtual node you just created. You can use `pactl` and `jq` to do this programatically. The output on my machine looks something like:
+* You can list all sources on your system with `pactl`:
 
     ```sh-session
-    $ pactl --format=json list sources | jq 'map({ key: .name, value: .index }) | from_entries'
-    {
-      "alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo.monitor": 75,
-      "alsa_input.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo": 76,
-      "alsa_input.usb-Logitech_Webcam_C930e-02.analog-stereo": 77,
-      "Bark": 145
-    }
+    $ pactl list sources short
+    145     Bark    PipeWire        float32le 2ch 48000Hz   SUSPENDED
+    3676    alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo.monitor     PipeWire        s32le 2ch 44100Hz       IDLE
+    3677    alsa_input.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo      PipeWire        s32le 2ch 44100Hz       SUSPENDED
+    3678    alsa_input.usb-046d_Logitech_Webcam_C930e-02.analog-stereo     PipeWire        s16le 2ch 44100Hz       SUSPENDED
     ```
 
-* Run the Bark server passing the node ID in the `PIPEWIRE_NODE` environment variable:
+* Run the Bark server passing the name of the sink you created with the `--device` option:
 
     ```sh-session
-    $ PIPEWIRE_NODE=145 bark stream --group 224.100.100.100 --port 1234
-    ```
-
-* Then run your audio source! You can use the same node ID to arrange for it to send its audio to the Bark node:
-
-    ```sh-session
-    $ PIPEWIRE_NODE=145 ffplay music.flac
+    $ bark stream --multicast 224.100.100.100:1530 --device Bark
     ```
 
 ### Running the receiver
 
-```sh-session
-$ bark receive --group 224.100.100.100 --port 1234
+* Find the sink you want the receiver to output to:
+
+    ```sh-session
+    $ pactl list sinks short
+    145     Bark    PipeWire        float32le 2ch 48000Hz   SUSPENDED
+    3676    alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo     PipeWire        s32le 2ch 44100Hz       RUNNING
+    ```
+
+* Run the Bark receiver:
+
+    ```sh-session
+    $ bark receive --multicast 224.100.100.100:1530 --device alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo
+    ```
+
+### Configuration file
+
+Bark will look for a `bark.toml` in any of the XDG config directories, respecting any custom directories set in `XDG_CONFIG_DIRS`.
+
+By default, Bark will look in `$HOME/.config/bark.toml` first, and then `/etc/bark.toml` second.
+
+The config file supports all command line options Bark supports. Here's an example:
+
+```toml
+multicast = "224.100.100.100:1530"
+
+[source]
+device = "Bark"
+delay_ms = 15
+
+[receive]
+device = "alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo"
 ```
 
-Simple as
+### Monitoring the stream
+
+Run `bark stats` to see a live view of the state of all Bark receivers.
+
+Four timing fields are shown for each receiver:
+
+* **Audio:** The time offset of the audio stream, from when it should be according to the stream presentation timestamp, to when the receiver is actually playing. A positive offset means the receiver is _ahead_ of the stream, a negative offset means the receiver is _behind_ the stream.
+
+* **Buffer:** The length of the audio data in the receiver buffer.
+
+* **Network:** The one-way packet delay between stream source and receiver. For best sync, this should be as stable as possible.
+
+* **Predict:** The offset from the data timestamp in an audio packet (the stream source's time when the packet was sent), to what the receiver thinks the data timestamp should be according to measured clock difference and network latency.
+
+### Tuning
+
+The stream source is responsible for setting the delay of the audio stream. The delay wants to be as low as possible without causing receivers to slew or underrun their buffers too much. Receivers will always experience _some_ slewing to keep in sync - the network is not perfectly reliable, and clocks always run at slightly different rates - but ideally slewing should be kept to a minimum to ensure best quality. Keep an eye on `bark stats` while tuning this value.
+
+The optimal delay value depends on your network, particularly with respect to packet loss and latency stability (receivers connecting wirelessly will need more delay to remain stable than those hard-wired), as well as the latency introduced by sound cards. I've observed that my desktop, which has a USB DAC, consistently tends to have less in its buffer than receivers with PCI DACs.
