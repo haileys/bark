@@ -46,11 +46,13 @@ Note: if using Pipewire, you must have `pipewire-alsa` installed for this to wor
     $ bark receive --multicast 224.100.100.100:1530 --device alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo
     ```
 
-### Configuration file
+### Configuration
 
-Bark will look for a `bark.toml` in any of the XDG config directories, respecting any custom directories set in `XDG_CONFIG_DIRS`.
+As well as command line options, Bark's options can be set by environment variable or configuration file. Command line options and environment variables are shown in `bark --help`.
 
-By default, Bark will look in `$HOME/.config/bark.toml` first, and then `/etc/bark.toml` second.
+Bark also searches the XDG config directories for a `bark.toml` configuration file, respecting any custom directories set in `XDG_CONFIG_DIRS`.
+
+By default, Bark will look in `$HOME/.config/bark.toml` first, and then `/etc/bark.toml`. Options set in the configuration file take lowest precedence, are overriden by environment variables, and then finally command line options take highest precedence.
 
 The config file supports all command line options Bark supports. Here's an example:
 
