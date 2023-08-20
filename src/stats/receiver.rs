@@ -106,7 +106,7 @@ impl ReceiverStats {
         let request_micros = request_pts.to_micros_lossy().0 as f64;
         let packet_micros = packet_pts.to_micros_lossy().0 as f64;
 
-        self.audio_latency = (packet_micros - request_micros) / 1_000_000.0;
+        self.audio_latency = (request_micros - packet_micros) / 1_000_000.0;
         self.flags.insert(Flags::HAS_AUDIO_LATENCY);
     }
 
