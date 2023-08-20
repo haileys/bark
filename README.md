@@ -48,7 +48,7 @@ Note: if using Pipewire, you must have `pipewire-alsa` installed for this to wor
 
 ### Configuration
 
-As well as command line options, Bark's options can be set by environment variable or configuration file. Command line options and environment variables are shown in `bark --help`.
+As well as on the command line, Bark's options can be set by environment variable or configuration file. Command line options and their corresponding environment variables are shown in `bark --help`.
 
 Bark also searches the XDG config directories for a `bark.toml` configuration file, respecting any custom directories set in `XDG_CONFIG_DIRS`.
 
