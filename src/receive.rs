@@ -348,9 +348,11 @@ impl Receiver {
         }
 
         if let Some(stream_ts) = stream_ts {
-            stream.rate_adjust.set_timing(real_ts_after_fill, stream_ts);
+            let rate = stream.rate_adjust.sample_rate(Timing {
+                real: real_ts_after_fill,
+                play: stream_ts,
+            });
 
-            let rate = stream.rate_adjust.sample_rate();
             let _ = stream.resampler.set_input_rate(rate.0);
 
             if stream.rate_adjust.slew() {
@@ -369,37 +371,31 @@ impl Receiver {
 }
 
 struct RateAdjust {
-    real_ts: Option<Timestamp>,
-    play_ts: Option<Timestamp>,
     slew: bool,
+}
+
+#[derive(Copy, Clone)]
+pub struct Timing {
+    pub real: Timestamp,
+    pub play: Timestamp,
 }
 
 impl RateAdjust {
     pub fn new() -> Self {
         RateAdjust {
-            real_ts: None,
-            play_ts: None,
             slew: false
         }
-    }
-
-    pub fn set_timing(&mut self, real_ts: Timestamp, play_ts: Timestamp) {
-        self.real_ts = Some(real_ts);
-        self.play_ts = Some(play_ts);
     }
 
     pub fn slew(&self) -> bool {
         self.slew
     }
 
-    pub fn sample_rate(&mut self) -> SampleRate {
-        self.adjusted_rate().unwrap_or(protocol::SAMPLE_RATE)
+    pub fn sample_rate(&mut self, timing: Timing) -> SampleRate {
+        self.adjusted_rate(timing).unwrap_or(protocol::SAMPLE_RATE)
     }
 
-    fn adjusted_rate(&mut self) -> Option<SampleRate> {
-        let real_ts = self.real_ts?;
-        let play_ts = self.play_ts?;
-
+    fn adjusted_rate(&mut self, timing: Timing) -> Option<SampleRate> {
         // parameters, maybe these could be cli args?
         let start_slew_threshold = Duration::from_micros(2000);
         let stop_slew_threshold = Duration::from_micros(100);
@@ -409,7 +405,7 @@ impl RateAdjust {
         let start_slew_threshold = SampleDuration::from_std_duration_lossy(start_slew_threshold);
         let stop_slew_threshold = SampleDuration::from_std_duration_lossy(stop_slew_threshold);
 
-        let frame_offset = real_ts.delta(play_ts);
+        let frame_offset = timing.real.delta(timing.play);
 
         if frame_offset.abs() < stop_slew_threshold {
             self.slew = false;
