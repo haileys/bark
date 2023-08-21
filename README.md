@@ -4,6 +4,10 @@ low latency multi-receiver synchronised audio streaming for local networks.
 
 * Transmits uncompressed 48khz stereo audio over UDP multicast
 
+* Built-in time synchronisation and latency detection - no high precision NTP required!
+
+* Adjusts audio playback rate with the Speex resampler to stay in sync
+
 ### Running the server under Pipewire or Pulse
 
 Note: if using Pipewire, you must have `pipewire-alsa` installed for this to work.
