@@ -38,6 +38,7 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
             loop {
                 let packet = StatsRequestPacket {
                     magic: protocol::MAGIC_STATS_REQ,
+                    flags: 0,
                 };
 
                 let _ = socket.broadcast(bytemuck::bytes_of(&packet));

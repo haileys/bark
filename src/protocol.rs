@@ -107,6 +107,7 @@ impl TimePacket {
 #[repr(C)]
 pub struct StatsRequestPacket {
     pub magic: u32,
+    pub flags: u32,
 }
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
