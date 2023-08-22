@@ -14,7 +14,7 @@ use structopt::StructOpt;
 use termcolor::BufferedStandardStream;
 
 use crate::protocol::{StatsRequestPacket, self, StatsReplyPacket, StatsReplyFlags};
-use crate::socket::{MultiSocket, SocketOpt};
+use crate::socket::{Socket, SocketOpt};
 use crate::RunError;
 
 use self::render::Padding;
@@ -26,7 +26,7 @@ pub struct StatsOpt {
 }
 
 pub fn run(opt: StatsOpt) -> Result<(), RunError> {
-    let socket = MultiSocket::open(opt.socket)
+    let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
     let socket = Arc::new(socket);

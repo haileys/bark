@@ -3,7 +3,7 @@ use std::net::{Ipv4Addr, UdpSocket, SocketAddr, SocketAddrV4};
 use std::os::fd::AsRawFd;
 
 use nix::poll::{PollFd, PollFlags};
-use socket2::{Socket, Domain, Type};
+use socket2::{Domain, Type};
 use structopt::StructOpt;
 
 // expedited forwarding - IP header field indicating that switches should
@@ -26,7 +26,7 @@ pub struct SocketOpt {
     pub multicast: SocketAddrV4,
 }
 
-pub struct MultiSocket {
+pub struct Socket {
     multicast: SocketAddrV4,
 
     // used to send unicast + multicast packets, as well as receive unicast replies
@@ -37,15 +37,17 @@ pub struct MultiSocket {
     rx: UdpSocket,
 }
 
-impl MultiSocket {
-    pub fn open(opt: SocketOpt) -> Result<MultiSocket, ListenError> {
+pub struct PeerId(SocketAddrV4);
+
+impl Socket {
+    pub fn open(opt: SocketOpt) -> Result<Socket, ListenError> {
         let group = *opt.multicast.ip();
         let port = opt.multicast.port();
 
         let tx = open_multicast(group, SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
         let rx = open_multicast(group, SocketAddrV4::new(group, port))?;
 
-        Ok(MultiSocket {
+        Ok(Socket {
             multicast: SocketAddrV4::new(group, port),
             tx: tx.into(),
             rx: rx.into(),
@@ -79,7 +81,7 @@ impl MultiSocket {
     }
 }
 
-fn open_multicast(group: Ipv4Addr, bind: SocketAddrV4) -> Result<Socket, ListenError> {
+fn open_multicast(group: Ipv4Addr, bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
     let socket = bind_socket(bind)?;
 
     // join multicast group
@@ -93,8 +95,8 @@ fn open_multicast(group: Ipv4Addr, bind: SocketAddrV4) -> Result<Socket, ListenE
     Ok(socket.into())
 }
 
-fn bind_socket(bind: SocketAddrV4) -> Result<Socket, ListenError> {
-    let socket = Socket::new(Domain::IPV4, Type::DGRAM, None)
+fn bind_socket(bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
+    let socket = socket2::Socket::new(Domain::IPV4, Type::DGRAM, None)
         .map_err(ListenError::Socket)?;
 
     socket.set_reuse_address(true).map_err(ListenError::SetReuseAddr)?;

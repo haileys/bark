@@ -10,7 +10,7 @@ use structopt::StructOpt;
 
 use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
 use crate::resample::Resampler;
-use crate::socket::{MultiSocket, SocketOpt};
+use crate::socket::{Socket, SocketOpt};
 use crate::stats::node::NodeStats;
 use crate::stats::receiver::{ReceiverStats, StreamStatus};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
@@ -529,7 +529,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
-    let socket = MultiSocket::open(opt.socket)
+    let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
     crate::thread::set_name("bark/network");
