@@ -20,6 +20,12 @@ pub struct PacketBuffer {
     len: usize,
 }
 
+impl std::fmt::Debug for PacketBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PacketBuffer {{ len = {}; {:x?} }}", self.len, &self.raw[0..self.len])
+    }
+}
+
 impl PacketBuffer {
     pub fn allocate() -> Self {
         PacketBuffer {
@@ -45,6 +51,7 @@ impl PacketBuffer {
     }
 }
 
+#[derive(Debug)]
 pub struct Packet(PacketBuffer);
 
 impl Packet {
@@ -111,6 +118,7 @@ impl Packet {
     }
 }
 
+#[derive(Debug)]
 pub enum PacketKind {
     Audio(Audio),
     Time(Time),
@@ -118,6 +126,7 @@ pub enum PacketKind {
     StatsReply(StatsReply),
 }
 
+#[derive(Debug)]
 pub struct Audio(Packet);
 
 impl Audio {
@@ -175,6 +184,7 @@ impl Audio {
     }
 }
 
+#[derive(Debug)]
 pub struct AudioWriter {
     packet: Audio,
     written: SampleDuration,
@@ -220,6 +230,7 @@ impl AudioWriter {
     }
 }
 
+#[derive(Debug)]
 pub struct Time(Packet);
 
 impl Time {
@@ -254,6 +265,7 @@ impl Time {
     }
 }
 
+#[derive(Debug)]
 pub struct StatsRequest(Packet);
 
 impl StatsRequest {
@@ -278,6 +290,7 @@ impl StatsRequest {
     }
 }
 
+#[derive(Debug)]
 pub struct StatsReply(Packet);
 
 impl StatsReply {
