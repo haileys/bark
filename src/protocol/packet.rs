@@ -221,6 +221,8 @@ impl AudioWriter {
         let dest_buffer = &mut self.remaining_buffer_mut()[0..copy_len];
         dest_buffer.copy_from_slice(source_buffer);
 
+        self.written = self.written.add(copy_duration);
+
         copy_duration
     }
 
