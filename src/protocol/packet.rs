@@ -238,14 +238,25 @@ impl AudioWriter {
 pub struct Time(Packet);
 
 impl Time {
-    const LENGTH: usize = size_of::<types::TimePacket>();
+    // packet delay has a linear relationship to packet size - it's important
+    // that time packets experience as similar delay as possible to audio
+    // packets for most accurate synchronisation, so we pad this packet out
+    // to the same size as the audio packet
+    const LENGTH: usize = Audio::LENGTH;
+
+    // time packets are padded so that they are
+    // the same length as audio packets:
+    const DATA_RANGE: std::ops::Range<usize> =
+        0..size_of::<types::TimePacket>();
 
     pub fn allocate() -> Self {
         Time(Packet::allocate(Magic::TIME, Self::LENGTH))
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
-        if packet.len() != Self::LENGTH {
+        // we add some padding to the time packet so that it is the same
+        // length as audio packets
+        if packet.len() < Self::LENGTH {
             return None;
         }
 
@@ -261,11 +272,11 @@ impl Time {
     }
 
     pub fn data(&self) -> &types::TimePacket {
-        bytemuck::from_bytes(self.0.as_bytes())
+        bytemuck::from_bytes(&self.0.as_bytes()[Self::DATA_RANGE])
     }
 
     pub fn data_mut(&mut self) -> &mut types::TimePacket {
-        bytemuck::from_bytes_mut(self.0.as_bytes_mut())
+        bytemuck::from_bytes_mut(&mut self.0.as_bytes_mut()[Self::DATA_RANGE])
     }
 }
 
