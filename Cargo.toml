@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 bitflags = { version = "2.4.0", features = ["bytemuck"] }
-bytemuck = { version = "1.13.1", features = ["derive"] }
+bytemuck = { version = "1.13.1", features = ["derive", "extern_crate_alloc"] }
 cpal = "0.15.2"
 derive_more = "0.99.17"
 libc = "0.2.147"

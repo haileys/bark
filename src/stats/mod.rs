@@ -3,19 +3,17 @@ pub mod receiver;
 pub mod render;
 
 use std::collections::HashMap;
-use std::mem::size_of;
-use std::net::{SocketAddrV4, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::io::Write;
 
-use bytemuck::Zeroable;
 use structopt::StructOpt;
 use termcolor::BufferedStandardStream;
 
-use crate::protocol;
-use crate::protocol::types::{StatsRequestPacket, StatsReplyPacket, StatsReplyFlags};
-use crate::socket::{Socket, SocketOpt};
+use crate::protocol::Protocol;
+use crate::protocol::packet::{StatsRequest, StatsReply, PacketKind};
+use crate::protocol::types::StatsReplyFlags;
+use crate::socket::{Socket, SocketOpt, PeerId};
 use crate::RunError;
 
 use self::render::Padding;
@@ -30,48 +28,33 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
-    let socket = Arc::new(socket);
+    let protocol = Arc::new(Protocol::new(socket));
 
     // spawn poller thread
     std::thread::spawn({
-        let socket = socket.clone();
+        let protocol = Arc::clone(&protocol);
         move || {
+            let request = StatsRequest::new();
             loop {
-                let packet = StatsRequestPacket {
-                    magic: protocol::types::MAGIC_STATS_REQ,
-                    flags: 0,
-                };
-
-                let _ = socket.broadcast(bytemuck::bytes_of(&packet));
-
+                let _ = protocol.broadcast(request.as_packet());
                 std::thread::sleep(Duration::from_millis(100));
             }
         }
     });
 
-    let mut stats = HashMap::<SocketAddrV4, Entry>::new();
+    let mut stats = HashMap::<PeerId, Entry>::new();
 
     loop {
-        let mut reply = StatsReplyPacket::zeroed();
-        let (nbytes, addr) = socket.recv_from(bytemuck::bytes_of_mut(&mut reply))
-            .map_err(RunError::Socket)?;
+        let (reply, peer) = protocol.recv_from().map_err(RunError::Socket)?;
 
-        if nbytes != size_of::<StatsReplyPacket>() {
-            continue;
-        }
-
-        if reply.magic != protocol::types::MAGIC_STATS_REPLY {
-            continue;
-        }
-
-        let SocketAddr::V4(addr) = addr else {
+        let Some(PacketKind::StatsReply(reply)) = reply.parse() else {
             continue;
         };
 
         let prev_entries = stats.len();
 
         let now = Instant::now();
-        stats.insert(addr, Entry { time: now, packet: Box::new(reply) });
+        stats.insert(peer, Entry { time: now, reply });
         stats.retain(|_, ent| ent.valid_at(now));
 
         let current_entries = stats.len();
@@ -83,18 +66,18 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
 
         // write stats for stream sources first
         let mut stats = stats.iter().collect::<Vec<_>>();
-        stats.sort_by_key(|(addr, entry)| (entry.is_receiver(), *addr));
+        stats.sort_by_key(|(peer, entry)| (entry.is_receiver(), *peer));
 
         let mut padding = Padding::default();
 
-        for (addr, entry) in &stats {
-            render::calculate(&mut padding, &entry.packet, **addr);
+        for (peer, entry) in &stats {
+            render::calculate(&mut padding, entry.reply.data(), **peer);
         }
 
-        for (addr, entry) in &stats {
+        for (peer, entry) in &stats {
             // kill line
             kill_line(&mut out);
-            render::line(&mut out, &padding, &entry.packet, **addr);
+            render::line(&mut out, &padding, &entry.reply, **peer);
             new_line(&mut out);
         }
 
@@ -127,12 +110,12 @@ fn new_line(out: &mut BufferedStandardStream) {
 
 struct Entry {
     time: Instant,
-    packet: Box<StatsReplyPacket>,
+    reply: StatsReply,
 }
 
 impl Entry {
     pub fn is_receiver(&self) -> bool {
-        self.packet.flags.contains(StatsReplyFlags::IS_RECEIVER)
+        self.reply.flags().contains(StatsReplyFlags::IS_RECEIVER)
     }
 
     pub fn valid_at(&self, now: Instant) -> bool {

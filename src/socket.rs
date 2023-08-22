@@ -2,6 +2,7 @@ use std::io;
 use std::net::{Ipv4Addr, UdpSocket, SocketAddr, SocketAddrV4};
 use std::os::fd::AsRawFd;
 
+use derive_more::Display;
 use nix::poll::{PollFd, PollFlags};
 use socket2::{Domain, Type};
 use structopt::StructOpt;
@@ -37,7 +38,8 @@ pub struct Socket {
     rx: UdpSocket,
 }
 
-pub struct PeerId(SocketAddrV4);
+#[derive(Clone, Copy, Debug, Display, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PeerId(SocketAddr);
 
 impl Socket {
     pub fn open(opt: SocketOpt) -> Result<Socket, ListenError> {
@@ -55,15 +57,16 @@ impl Socket {
     }
 
     pub fn broadcast(&self, msg: &[u8]) -> Result<(), io::Error> {
-        self.send_to(msg, self.multicast.into())
-    }
-
-    pub fn send_to(&self, msg: &[u8], dest: SocketAddr) -> Result<(), io::Error> {
-        self.tx.send_to(msg, dest)?;
+        self.tx.send_to(msg, self.multicast)?;
         Ok(())
     }
 
-    pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr), io::Error> {
+    pub fn send_to(&self, msg: &[u8], dest: PeerId) -> Result<(), io::Error> {
+        self.tx.send_to(msg, dest.0)?;
+        Ok(())
+    }
+
+    pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, PeerId), io::Error> {
         let mut poll = [
             PollFd::new(self.tx.as_raw_fd(), PollFlags::POLLIN),
             PollFd::new(self.rx.as_raw_fd(), PollFlags::POLLIN),
@@ -71,13 +74,16 @@ impl Socket {
 
         nix::poll::poll(&mut poll, -1)?;
 
-        if poll[0].any() == Some(true) {
-            self.tx.recv_from(buf)
-        } else if poll[1].any() == Some(true) {
-            self.rx.recv_from(buf)
-        } else {
-            unreachable!()
-        }
+        let (nbytes, addr) =
+            if poll[0].any() == Some(true) {
+                self.tx.recv_from(buf)?
+            } else if poll[1].any() == Some(true) {
+                self.rx.recv_from(buf)?
+            } else {
+                unreachable!("poll returned with no readable sockets");
+            };
+
+        Ok((nbytes, PeerId(addr)))
     }
 }
 
