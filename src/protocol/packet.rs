@@ -49,6 +49,10 @@ impl PacketBuffer {
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         &mut self.raw[0..self.len]
     }
+
+    pub fn as_full_buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.raw
+    }
 }
 
 #[derive(Debug)]

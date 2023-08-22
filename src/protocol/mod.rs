@@ -38,7 +38,7 @@ impl Protocol {
         loop {
             let mut buffer = PacketBuffer::allocate();
 
-            let (nbytes, peer) = self.socket.recv_from(buffer.as_bytes_mut())?;
+            let (nbytes, peer) = self.socket.recv_from(buffer.as_full_buffer_mut())?;
             buffer.set_len(nbytes);
 
             if let Some(packet) = Packet::from_buffer(buffer) {
