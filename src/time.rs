@@ -1,4 +1,6 @@
-use crate::protocol::{self, TimestampMicros, TimePacket};
+use crate::protocol;
+use crate::protocol::packet;
+use crate::protocol::types::TimestampMicros;
 
 /// A timestamp with implicit denominator SAMPLE_RATE
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -104,16 +106,18 @@ impl ClockDelta {
     }
 
     /// Calculates clock difference between machines based on a complete TimePacket
-    pub fn from_time_packet(packet: &TimePacket) -> ClockDelta {
+    pub fn from_time_packet(packet: &packet::Time) -> ClockDelta {
+        let time = packet.data();
+
         // all fields should be non-zero here, it's a programming error if
         // they're not.
-        assert!(packet.stream_1.0 != 0);
-        assert!(packet.receive_2.0 != 0);
-        assert!(packet.stream_3.0 != 0);
+        assert!(time.stream_1.0 != 0);
+        assert!(time.receive_2.0 != 0);
+        assert!(time.stream_3.0 != 0);
 
-        let t1_usec = packet.stream_1.0 as i64;
-        let t2_usec = packet.receive_2.0 as i64;
-        let t3_usec = packet.stream_3.0 as i64;
+        let t1_usec = time.stream_1.0 as i64;
+        let t2_usec = time.receive_2.0 as i64;
+        let t3_usec = time.stream_3.0 as i64;
 
         // algorithm from the Precision Time Protocol page on Wikipedia
         ClockDelta((t2_usec - t1_usec + t2_usec - t3_usec) / 2)

@@ -2,8 +2,9 @@ use std::io;
 use std::net::{Ipv4Addr, UdpSocket, SocketAddr, SocketAddrV4};
 use std::os::fd::AsRawFd;
 
+use derive_more::Display;
 use nix::poll::{PollFd, PollFlags};
-use socket2::{Socket, Domain, Type};
+use socket2::{Domain, Type};
 use structopt::StructOpt;
 
 // expedited forwarding - IP header field indicating that switches should
@@ -26,7 +27,7 @@ pub struct SocketOpt {
     pub multicast: SocketAddrV4,
 }
 
-pub struct MultiSocket {
+pub struct Socket {
     multicast: SocketAddrV4,
 
     // used to send unicast + multicast packets, as well as receive unicast replies
@@ -37,15 +38,18 @@ pub struct MultiSocket {
     rx: UdpSocket,
 }
 
-impl MultiSocket {
-    pub fn open(opt: SocketOpt) -> Result<MultiSocket, ListenError> {
+#[derive(Clone, Copy, Debug, Display, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PeerId(SocketAddr);
+
+impl Socket {
+    pub fn open(opt: SocketOpt) -> Result<Socket, ListenError> {
         let group = *opt.multicast.ip();
         let port = opt.multicast.port();
 
         let tx = open_multicast(group, SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
         let rx = open_multicast(group, SocketAddrV4::new(group, port))?;
 
-        Ok(MultiSocket {
+        Ok(Socket {
             multicast: SocketAddrV4::new(group, port),
             tx: tx.into(),
             rx: rx.into(),
@@ -53,15 +57,16 @@ impl MultiSocket {
     }
 
     pub fn broadcast(&self, msg: &[u8]) -> Result<(), io::Error> {
-        self.send_to(msg, self.multicast.into())
-    }
-
-    pub fn send_to(&self, msg: &[u8], dest: SocketAddr) -> Result<(), io::Error> {
-        self.tx.send_to(msg, dest)?;
+        self.tx.send_to(msg, self.multicast)?;
         Ok(())
     }
 
-    pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr), io::Error> {
+    pub fn send_to(&self, msg: &[u8], dest: PeerId) -> Result<(), io::Error> {
+        self.tx.send_to(msg, dest.0)?;
+        Ok(())
+    }
+
+    pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, PeerId), io::Error> {
         let mut poll = [
             PollFd::new(self.tx.as_raw_fd(), PollFlags::POLLIN),
             PollFd::new(self.rx.as_raw_fd(), PollFlags::POLLIN),
@@ -69,17 +74,20 @@ impl MultiSocket {
 
         nix::poll::poll(&mut poll, -1)?;
 
-        if poll[0].any() == Some(true) {
-            self.tx.recv_from(buf)
-        } else if poll[1].any() == Some(true) {
-            self.rx.recv_from(buf)
-        } else {
-            unreachable!()
-        }
+        let (nbytes, addr) =
+            if poll[0].any() == Some(true) {
+                self.tx.recv_from(buf)?
+            } else if poll[1].any() == Some(true) {
+                self.rx.recv_from(buf)?
+            } else {
+                unreachable!("poll returned with no readable sockets");
+            };
+
+        Ok((nbytes, PeerId(addr)))
     }
 }
 
-fn open_multicast(group: Ipv4Addr, bind: SocketAddrV4) -> Result<Socket, ListenError> {
+fn open_multicast(group: Ipv4Addr, bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
     let socket = bind_socket(bind)?;
 
     // join multicast group
@@ -93,8 +101,8 @@ fn open_multicast(group: Ipv4Addr, bind: SocketAddrV4) -> Result<Socket, ListenE
     Ok(socket.into())
 }
 
-fn bind_socket(bind: SocketAddrV4) -> Result<Socket, ListenError> {
-    let socket = Socket::new(Domain::IPV4, Type::DGRAM, None)
+fn bind_socket(bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
+    let socket = socket2::Socket::new(Domain::IPV4, Type::DGRAM, None)
         .map_err(ListenError::Socket)?;
 
     socket.set_reuse_address(true).map_err(ListenError::SetReuseAddr)?;

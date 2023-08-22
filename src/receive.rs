@@ -8,9 +8,11 @@ use cpal::{SampleRate, OutputCallbackInfo};
 use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
+use crate::protocol::{self, Protocol};
+use crate::protocol::packet::{Audio, Time, PacketKind, StatsReply};
+use crate::protocol::types::{TimestampMicros, SessionId, ReceiverId, TimePhase};
 use crate::resample::Resampler;
-use crate::socket::{MultiSocket, SocketOpt};
+use crate::socket::{Socket, SocketOpt};
 use crate::stats::node::NodeStats;
 use crate::stats::receiver::{ReceiverStats, StreamStatus};
 use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
@@ -28,13 +30,13 @@ struct QueueEntry {
     seq: u64,
     pts: Option<Timestamp>,
     consumed: SampleDuration,
-    packet: Option<AudioPacket>,
+    packet: Option<Audio>,
 }
 
 impl QueueEntry {
-    pub fn as_full_buffer(&self) -> &[f32; protocol::SAMPLES_PER_PACKET] {
+    pub fn as_full_buffer(&self) -> &[f32] {
         self.packet.as_ref()
-            .map(|packet| &packet.buffer.0)
+            .map(|packet| packet.buffer())
             .unwrap_or(&[0f32; protocol::SAMPLES_PER_PACKET])
     }
 }
@@ -50,12 +52,12 @@ struct Stream {
 }
 
 impl Stream {
-    pub fn start_from_packet(packet: &AudioPacket) -> Self {
+    pub fn start_from_packet(audio: &Audio) -> Self {
         let resampler = Resampler::new();
 
         Stream {
-            sid: packet.sid,
-            start_seq: packet.seq,
+            sid: audio.header().sid,
+            start_seq: audio.header().seq,
             sync: false,
             resampler,
             rate_adjust: RateAdjust::new(),
@@ -101,19 +103,19 @@ impl Receiver {
         self.stream.as_ref().map(|s| s.sid)
     }
 
-    pub fn receive_time(&mut self, packet: &TimePacket) {
+    pub fn receive_time(&mut self, packet: Time) {
         let Some(stream) = self.stream.as_mut() else {
             // no stream, nothing we can do with a time packet
             return;
         };
 
-        if stream.sid != packet.sid {
+        if stream.sid != packet.data().sid {
             // not relevant to our stream, ignore
             return;
         }
 
-        let stream_1_usec = packet.stream_1.0;
-        let stream_3_usec = packet.stream_3.0;
+        let stream_1_usec = packet.data().stream_1.0;
+        let stream_3_usec = packet.data().stream_3.0;
 
         let Some(rtt_usec) = stream_3_usec.checked_sub(stream_1_usec) else {
             // invalid packet, ignore
@@ -127,18 +129,20 @@ impl Receiver {
             self.stats.set_network_latency(latency);
         }
 
-        let clock_delta = ClockDelta::from_time_packet(packet);
+        let clock_delta = ClockDelta::from_time_packet(&packet);
         stream.clock_delta.observe(clock_delta);
     }
 
-    fn prepare_stream(&mut self, packet: &AudioPacket) -> bool {
+    fn prepare_stream(&mut self, packet: &Audio) -> bool {
         if let Some(stream) = self.stream.as_mut() {
-            if packet.sid < stream.sid {
+            let header = packet.header();
+
+            if header.sid < stream.sid {
                 // packet belongs to a previous stream, ignore
                 return false;
             }
 
-            if packet.sid > stream.sid {
+            if header.sid > stream.sid {
                 // new stream is taking over! switch over to it
                 println!("\nnew stream beginning");
                 self.stream = Some(Stream::start_from_packet(packet));
@@ -147,20 +151,20 @@ impl Receiver {
                 return true;
             }
 
-            if packet.seq < stream.start_seq {
+            if header.seq < stream.start_seq {
                 println!("\nreceived packet with seq before start, dropping");
                 return false;
             }
 
             if let Some(front) = self.queue.front() {
-                if packet.seq <= front.seq {
+                if header.seq <= front.seq {
                     println!("\nreceived packet with seq <= queue front seq, dropping");
                     return false;
                 }
             }
 
             if let Some(back) = self.queue.back() {
-                if back.seq + self.opt.max_seq_gap as u64 <= packet.seq {
+                if back.seq + self.opt.max_seq_gap as u64 <= header.seq {
                     println!("\nreceived packet with seq too far in future, resetting stream");
                     self.stream = Some(Stream::start_from_packet(packet));
                     self.stats.clear();
@@ -176,15 +180,10 @@ impl Receiver {
         }
     }
 
-    pub fn receive_audio(&mut self, packet: &AudioPacket) {
+    pub fn receive_audio(&mut self, packet: Audio) {
         let now = TimestampMicros::now();
 
-        if packet.flags != 0 {
-            println!("\nunknown flags in packet, ignoring entire packet");
-            return;
-        }
-
-        if !self.prepare_stream(packet) {
+        if !self.prepare_stream(&packet) {
             return;
         }
 
@@ -197,7 +196,7 @@ impl Receiver {
                 let latency_usec = u64::try_from(latency.as_micros()).unwrap();
                 let delta_usec = clock_delta.as_micros();
                 let predict_dts = (now.0 - latency_usec).checked_add_signed(-delta_usec).unwrap();
-                let predict_diff = predict_dts as i64 - packet.dts.0 as i64;
+                let predict_diff = predict_dts as i64 - packet.header().dts.0 as i64;
                 self.stats.set_predict_offset(predict_diff)
             }
         }
@@ -208,10 +207,10 @@ impl Receiver {
 
         // expand queue to make space for new packet
         if let Some(back) = self.queue.back() {
-            if packet.seq > back.seq {
+            if packet.header().seq > back.seq {
                 // extend queue from back to make space for new packet
                 // this also allows for out of order packets
-                for seq in (back.seq + 1)..=packet.seq {
+                for seq in (back.seq + 1)..=packet.header().seq {
                     self.queue.push_back(QueueEntry {
                         seq,
                         pts: None,
@@ -223,7 +222,7 @@ impl Receiver {
         } else {
             // queue is empty, insert missing packet slot for the packet we are about to receive
             self.queue.push_back(QueueEntry {
-                seq: packet.seq,
+                seq: packet.header().seq,
                 pts: None,
                 consumed: SampleDuration::zero(),
                 packet: None,
@@ -233,12 +232,12 @@ impl Receiver {
         // INVARIANT: at this point queue is non-empty and contains an
         // allocated slot for the packet we just received
         let front_seq = self.queue.front().unwrap().seq;
-        let idx_for_packet = (packet.seq - front_seq) as usize;
+        let idx_for_packet = (packet.header().seq - front_seq) as usize;
 
         let slot = self.queue.get_mut(idx_for_packet).unwrap();
-        assert!(slot.seq == packet.seq);
-        slot.packet = Some(*packet);
-        slot.pts = stream.adjust_pts(Timestamp::from_micros_lossy(packet.pts))
+        assert!(slot.seq == packet.header().seq);
+        slot.pts = stream.adjust_pts(Timestamp::from_micros_lossy(packet.header().pts));
+        slot.packet = Some(packet);
     }
 
     pub fn fill_stream_buffer(&mut self, mut data: &mut [f32], pts: Timestamp) {
@@ -529,31 +528,32 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
-    let socket = MultiSocket::open(opt.socket)
+    let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
+
+    let protocol = Protocol::new(socket);
 
     crate::thread::set_name("bark/network");
     crate::thread::set_realtime_priority();
 
     loop {
-        let mut packet_raw = [0u8; protocol::MAX_PACKET_SIZE];
+        let (packet, peer) = protocol.recv_from().map_err(RunError::Socket)?;
 
-        let (nbytes, addr) = socket.recv_from(&mut packet_raw)
-            .map_err(RunError::Socket)?;
-
-        match Packet::try_from_bytes_mut(&mut packet_raw[0..nbytes]) {
-            Some(Packet::Time(time)) => {
-                if !time.rid.matches(&receiver_id) {
+        match packet.parse() {
+            Some(PacketKind::Time(mut time)) => {
+                if !time.data().rid.matches(&receiver_id) {
                     // not for us - time packets are usually unicast,
                     // but there can be multiple receivers on a machine
                     continue;
                 }
 
-                match time.phase() {
+                match time.data().phase() {
                     Some(TimePhase::Broadcast) => {
-                        time.receive_2 = TimestampMicros::now();
-                        time.rid = receiver_id;
-                        socket.send_to(bytemuck::bytes_of(time), addr)
+                        let data = time.data_mut();
+                        data.receive_2 = TimestampMicros::now();
+                        data.rid = receiver_id;
+
+                        protocol.send_to(time.as_packet(), peer)
                             .expect("reply to time packet");
                     }
                     Some(TimePhase::StreamReply) => {
@@ -566,27 +566,20 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                     }
                 }
             }
-            Some(Packet::Audio(packet)) => {
+            Some(PacketKind::Audio(packet)) => {
                 let mut state = state.lock().unwrap();
                 state.recv.receive_audio(packet);
             }
-            Some(Packet::StatsRequest(_)) => {
+            Some(PacketKind::StatsRequest(_)) => {
                 let state = state.lock().unwrap();
-                let sid = state.recv.current_session();
-                let stats = *state.recv.stats();
+                let sid = state.recv.current_session().unwrap_or(SessionId::zeroed());
+                let receiver = *state.recv.stats();
                 drop(state);
 
-                let reply = StatsReplyPacket {
-                    magic: protocol::MAGIC_STATS_REPLY,
-                    flags: StatsReplyFlags::IS_RECEIVER,
-                    sid: sid.unwrap_or(SessionId::zeroed()),
-                    receiver: stats,
-                    node,
-                };
-
-                let _ = socket.send_to(bytemuck::bytes_of(&reply), addr);
+                let reply = StatsReply::receiver(sid, receiver, node);
+                let _ = protocol.send_to(reply.as_packet(), peer);
             }
-            Some(Packet::StatsReply(_)) => {
+            Some(PacketKind::StatsReply(_)) => {
                 // ignore
             }
             None => {

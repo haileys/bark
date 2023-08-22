@@ -1,15 +1,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytemuck::Zeroable;
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
-use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
-use crate::socket::{MultiSocket, SocketOpt};
+use crate::protocol::{self, Protocol};
+use crate::protocol::packet::{self, Audio, StatsReply, PacketKind};
+use crate::protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
+use crate::socket::{Socket, SocketOpt};
 use crate::stats::node::NodeStats;
-use crate::stats::receiver::ReceiverStats;
 use crate::time::{SampleDuration, Timestamp};
 use crate::util;
 use crate::RunError;
@@ -45,10 +45,10 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     let config = util::config_for_device(&device)?;
 
-    let socket = MultiSocket::open(opt.socket)
+    let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
-    let socket = Arc::new(socket);
+    let protocol = Arc::new(Protocol::new(socket));
 
     let delay = Duration::from_millis(opt.delay_ms);
     let delay = SampleDuration::from_std_duration_lossy(delay);
@@ -56,21 +56,18 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let sid = SessionId::generate();
     let node = NodeStats::get();
 
-    let mut packet = AudioPacket {
-        magic: protocol::MAGIC_AUDIO,
-        flags: 0,
+    let mut audio_header = AudioPacketHeader {
         sid,
         seq: 1,
         pts: TimestampMicros(0),
         dts: TimestampMicros(0),
-        buffer: PacketBuffer::zeroed(),
     };
 
-    let mut packet_written = SampleDuration::zero();
+    let mut audio_buffer = Audio::write();
 
     let stream = device.build_input_stream(&config,
         {
-            let socket = Arc::clone(&socket);
+            let protocol = Arc::clone(&protocol);
             let mut initialized_thread = false;
             move |mut data: &[f32], _: &InputCallbackInfo| {
                 if !initialized_thread {
@@ -84,33 +81,35 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
                 let mut timestamp = Timestamp::now().add(delay);
 
-                if packet.pts.0 == 0 {
-                    packet.pts = timestamp.to_micros_lossy();
+                if audio_header.pts.0 == 0 {
+                    audio_header.pts = timestamp.to_micros_lossy();
                 }
 
                 while data.len() > 0 {
-                    let buffer_offset = packet_written.as_buffer_offset();
-                    let buffer_remaining = packet.buffer.0.len() - buffer_offset;
+                    // write some data to the waiting packet buffer
+                    let written = audio_buffer.write(data);
 
-                    let copy_count = std::cmp::min(data.len(), buffer_remaining);
-                    let buffer_copy_end = buffer_offset + copy_count;
+                    // advance
+                    timestamp = timestamp.add(written);
+                    data = &data[written.as_buffer_offset()..];
 
-                    packet.buffer.0[buffer_offset..buffer_copy_end]
-                        .copy_from_slice(&data[0..copy_count]);
+                    // if packet buffer is full, finalize it and send off the packet:
+                    if audio_buffer.valid_length() {
+                        // take packet writer and replace with new
+                        let audio = std::mem::replace(&mut audio_buffer, Audio::write());
 
-                    data = &data[copy_count..];
-                    packet_written = SampleDuration::from_buffer_offset(buffer_copy_end);
-                    timestamp = timestamp.add(SampleDuration::from_buffer_offset(copy_count));
+                        // finalize packet
+                        let audio_packet = audio.finalize(AudioPacketHeader {
+                            dts: TimestampMicros::now(),
+                            ..audio_header
+                        });
 
-                    if packet_written == SampleDuration::ONE_PACKET {
-                        // packet is full! set dts and send
-                        packet.dts = TimestampMicros::now();
-                        socket.broadcast(bytemuck::bytes_of(&packet)).expect("broadcast");
+                        // send it
+                        protocol.broadcast(audio_packet.as_packet()).expect("broadcast");
 
-                        // reset rest of packet for next:
-                        packet.seq += 1;
-                        packet.pts = timestamp.to_micros_lossy();
-                        packet_written = SampleDuration::zero();
+                        // reset header for next packet:
+                        audio_header.seq += 1;
+                        audio_header.pts = timestamp.to_micros_lossy();
                     }
                 }
 
@@ -118,8 +117,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 // callback, the pts we just calculated is valid. if the packet is
                 // empty, reset the pts to 0. this signals the next callback to set
                 // pts to the current time when it fires.
-                if packet_written == SampleDuration::zero() {
-                    packet.pts.0 = 0;
+                if audio_buffer.length() == SampleDuration::zero() {
+                    audio_header.pts.0 = 0;
                 }
             }
         },
@@ -134,23 +133,19 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
         crate::thread::set_name("bark/clock");
         crate::thread::set_realtime_priority();
 
-        let socket = Arc::clone(&socket);
+        let protocol = Arc::clone(&protocol);
         move || {
+            let mut time = packet::Time::allocate();
+
+            // set up packet
+            let data = time.data_mut();
+            data.sid = sid;
+            data.rid = ReceiverId::broadcast();
+
             loop {
-                let now = TimestampMicros::now();
+                time.data_mut().stream_1 = TimestampMicros::now();
 
-                let packet = TimePacket {
-                    magic: protocol::MAGIC_TIME,
-                    flags: 0,
-                    sid,
-                    rid: ReceiverId::broadcast(),
-                    stream_1: now,
-                    receive_2: TimestampMicros(0),
-                    stream_3: TimestampMicros(0),
-                    _pad: TimePacketPadding::zeroed(),
-                };
-
-                socket.broadcast(bytemuck::bytes_of(&packet))
+                protocol.broadcast(time.as_packet())
                     .expect("broadcast time");
 
                 std::thread::sleep(Duration::from_millis(200));
@@ -164,32 +159,29 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     crate::thread::set_realtime_priority();
 
     loop {
-        let mut packet_raw = [0u8; MAX_PACKET_SIZE];
+        let (packet, peer) = protocol.recv_from().expect("protocol.recv_from");
 
-        let (nbytes, addr) = socket.recv_from(&mut packet_raw)
-            .expect("socket.recv_from");
-
-        match Packet::try_from_bytes_mut(&mut packet_raw[0..nbytes]) {
-            Some(Packet::Audio(packet)) => {
+        match packet.parse() {
+            Some(PacketKind::Audio(audio)) => {
                 // we should only ever receive an audio packet if another
                 // stream is present. check if it should take over
-                if packet.sid > sid {
-                    eprintln!("Another stream has taken over from {addr}, exiting");
+                if audio.header().sid > sid {
+                    eprintln!("Peer {peer} has taken over stream, exiting");
                     break;
                 }
             }
-            Some(Packet::Time(packet)) => {
+            Some(PacketKind::Time(mut time)) => {
                 // only handle packet if it belongs to our stream:
-                if packet.sid != sid {
+                if time.data().sid != sid {
                     continue;
                 }
 
-                match packet.phase() {
+                match time.data().phase() {
                     Some(TimePhase::ReceiverReply) => {
-                        packet.stream_3 = TimestampMicros::now();
+                        time.data_mut().stream_3 = TimestampMicros::now();
 
-                        socket.send_to(bytemuck::bytes_of(packet), addr)
-                            .expect("socket.send responding to time packet");
+                        protocol.send_to(time.as_packet(), peer)
+                            .expect("protocol.send_to responding to time packet");
                     }
                     _ => {
                         // any other packet here must be destined for
@@ -198,18 +190,11 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 }
 
             }
-            Some(Packet::StatsRequest(_)) => {
-                let reply = StatsReplyPacket {
-                    magic: protocol::MAGIC_STATS_REPLY,
-                    flags: StatsReplyFlags::IS_STREAM,
-                    sid: sid,
-                    receiver: ReceiverStats::zeroed(),
-                    node,
-                };
-
-                let _ = socket.send_to(bytemuck::bytes_of(&reply), addr);
+            Some(PacketKind::StatsRequest(_)) => {
+                let reply = StatsReply::source(sid, node);
+                let _ = protocol.send_to(reply.as_packet(), peer);
             }
-            Some(Packet::StatsReply(_)) => {
+            Some(PacketKind::StatsReply(_)) => {
                 // ignore
             }
             None => {

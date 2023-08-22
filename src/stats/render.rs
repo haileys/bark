@@ -1,31 +1,31 @@
-use std::net::SocketAddrV4;
-
 use termcolor::{WriteColor, ColorSpec, Color};
 
+use crate::protocol::packet::StatsReply;
+use crate::protocol::types::{StatsReplyPacket, StatsReplyFlags};
+use crate::socket::PeerId;
 use crate::stats::receiver::{ReceiverStats, StreamStatus};
 use crate::stats::node::NodeStats;
-use crate::protocol::{StatsReplyPacket, StatsReplyFlags};
 
 #[derive(Default)]
 pub struct Padding {
     node_width: usize,
-    addr_width: usize,
+    peer_width: usize,
 }
 
-pub fn calculate(padding: &mut Padding, stats: &StatsReplyPacket, addr: SocketAddrV4) {
+pub fn calculate(padding: &mut Padding, stats: &StatsReplyPacket, peer: PeerId) {
     let node_width = stats.node.display().len();
-    let addr_width = addr.to_string().len();
+    let peer_width = peer.to_string().len();
 
     padding.node_width = std::cmp::max(padding.node_width, node_width);
-    padding.addr_width = std::cmp::max(padding.node_width, addr_width);
+    padding.peer_width = std::cmp::max(padding.peer_width, peer_width);
 }
 
-pub fn line(out: &mut dyn WriteColor, padding: &Padding, stats: &StatsReplyPacket, addr: SocketAddrV4) {
-    node(out, padding, &stats.node, addr);
+pub fn line(out: &mut dyn WriteColor, padding: &Padding, stats: &StatsReply, peer: PeerId) {
+    node(out, padding, &stats.data().node, peer);
 
-    if stats.flags.contains(StatsReplyFlags::IS_RECEIVER) {
-        receiver(out, &stats.receiver);
-    } else if stats.flags.contains(StatsReplyFlags::IS_STREAM) {
+    if stats.flags().contains(StatsReplyFlags::IS_RECEIVER) {
+        receiver(out, &stats.data().receiver);
+    } else if stats.flags().contains(StatsReplyFlags::IS_STREAM) {
         let _ = out.set_color(&ColorSpec::new()
             .set_fg(Some(Color::White))
             .set_bold(true));
@@ -34,7 +34,7 @@ pub fn line(out: &mut dyn WriteColor, padding: &Padding, stats: &StatsReplyPacke
     }
 }
 
-fn node(out: &mut dyn WriteColor, padding: &Padding, node: &NodeStats, addr: SocketAddrV4) {
+fn node(out: &mut dyn WriteColor, padding: &Padding, node: &NodeStats, peer: PeerId) {
     let _ = out.set_color(&ColorSpec::new()
         .set_fg(Some(Color::Blue))
         .set_bold(true));
@@ -44,7 +44,7 @@ fn node(out: &mut dyn WriteColor, padding: &Padding, node: &NodeStats, addr: Soc
     let _ = out.set_color(&ColorSpec::new()
         .set_dimmed(true));
 
-    let _ = write!(out, "{:<width$}  ", addr, width = padding.addr_width);
+    let _ = write!(out, "{:<width$}  ", peer, width = padding.peer_width);
 
     let _ = out.set_color(&ColorSpec::new());
 }

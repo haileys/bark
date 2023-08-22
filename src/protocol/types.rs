@@ -1,20 +1,29 @@
 use bytemuck::{Pod, Zeroable};
-use cpal::{SampleFormat, SampleRate, ChannelCount};
 use nix::time::ClockId;
 use nix::sys::time::TimeValLike;
 
 use crate::stats;
+use crate::protocol;
 
-pub const SAMPLE_FORMAT: SampleFormat = SampleFormat::F32;
-pub const SAMPLE_RATE: SampleRate = SampleRate(48000);
-pub const CHANNELS: ChannelCount = 2;
-pub const FRAMES_PER_PACKET: usize = 160;
-pub const SAMPLES_PER_PACKET: usize = CHANNELS as usize * FRAMES_PER_PACKET;
+#[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Magic(u32);
 
-pub const MAGIC_AUDIO: u32       = 0x00a79ae2;
-pub const MAGIC_TIME: u32        = 0x01a79ae2;
-pub const MAGIC_STATS_REQ: u32   = 0x02a79ae2;
-pub const MAGIC_STATS_REPLY: u32 = 0x03a79ae2;
+impl Magic {
+    pub const AUDIO: Magic       = Magic(0x00a79ae2);
+    pub const TIME: Magic        = Magic(0x01a79ae2);
+    pub const STATS_REQ: Magic   = Magic(0x02a79ae2);
+    pub const STATS_REPLY: Magic = Magic(0x03a79ae2);
+}
+
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[repr(C)]
+pub struct PacketHeader {
+    // magic and flags. there is a distinct magic value for each packet type,
+    // and flags has a packet-dependent meaning.
+    pub magic: Magic,
+    pub flags: u32,
+}
 
 /// our network Packet struct
 /// we don't need to worry about endianness, because according to the rust docs:
@@ -25,12 +34,7 @@ pub const MAGIC_STATS_REPLY: u32 = 0x03a79ae2;
 ///     - https://doc.rust-lang.org/std/primitive.f32.html
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
-pub struct AudioPacket {
-    // magic and flags. magic is always MAGIC_AUDIO and indicates that this
-    // is an audio packet. flags is always 0 for now.
-    pub magic: u32,
-    pub flags: u32,
-
+pub struct AudioPacketHeader {
     // stream id - set to the start time of a stream, used by receivers to
     // detect new stream starts, used by senders to detect stream takeovers
     pub sid: SessionId,
@@ -44,27 +48,19 @@ pub struct AudioPacket {
 
     // data timestamp - the stream's clock when packet is sent
     pub dts: TimestampMicros,
-
-    // audio data:
-    pub buffer: PacketBuffer,
 }
+
+pub type AudioPacketBuffer = [f32; protocol::SAMPLES_PER_PACKET];
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct TimePacket {
-    pub magic: u32,
-    pub flags: u32,
     pub sid: SessionId,
     pub rid: ReceiverId,
 
     pub stream_1: TimestampMicros,
     pub receive_2: TimestampMicros,
     pub stream_3: TimestampMicros,
-
-    // packet delay has a linear relationship to packet size - it's important
-    // that time packets experience as similar delay as possible to audio
-    // packets for most accurate synchronisation, so we add some padding here
-    pub _pad: TimePacketPadding,
 }
 
 #[derive(Debug, PartialEq)]
@@ -105,17 +101,7 @@ impl TimePacket {
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
-pub struct StatsRequestPacket {
-    pub magic: u32,
-    pub flags: u32,
-}
-
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-#[repr(C)]
 pub struct StatsReplyPacket {
-    pub magic: u32,
-    pub flags: StatsReplyFlags,
-
     pub sid: SessionId,
     pub receiver: stats::receiver::ReceiverStats,
     pub node: stats::node::NodeStats,
@@ -127,80 +113,6 @@ bitflags::bitflags! {
     pub struct StatsReplyFlags: u32 {
         const IS_RECEIVER = 0x01;
         const IS_STREAM   = 0x02;
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(transparent)]
-pub struct PacketBuffer(pub [f32; SAMPLES_PER_PACKET]);
-
-/// SAFETY: Pod is impl'd for f32, and [T: Pod; N: usize]
-/// but for some reason doesn't like N == SAMPLES_PER_PACKET?
-unsafe impl Pod for PacketBuffer {}
-
-/// SAFETY: Zeroable is impl'd for f32, and [T: Zeroable; N: usize]
-/// but for some reason doesn't like N == SAMPLES_PER_PACKET?
-unsafe impl Zeroable for PacketBuffer {
-    fn zeroed() -> Self {
-        PacketBuffer([0f32; SAMPLES_PER_PACKET])
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct TimePacketPadding([u8; 1272]);
-
-// SAFETY: same as above in PacketBuffer
-unsafe impl Pod for TimePacketPadding {}
-
-// SAFETY: same as above in PacketBuffer
-unsafe impl Zeroable for TimePacketPadding {
-    fn zeroed() -> Self {
-        TimePacketPadding([0u8; 1272])
-    }
-}
-
-// assert that AudioPacket and TimePacket are the same size, see comment for
-// TimePacket::_pad field
-static_assertions::assert_eq_size!(AudioPacket, TimePacket);
-
-pub const MAX_PACKET_SIZE: usize = ::std::mem::size_of::<PacketUnion>();
-
-#[repr(C)]
-union PacketUnion {
-    _1: AudioPacket,
-    _2: TimePacket,
-    _3: StatsRequestPacket,
-    _4: StatsReplyPacket,
-}
-
-pub enum Packet<'a> {
-    Audio(&'a mut AudioPacket),
-    Time(&'a mut TimePacket),
-    StatsRequest(&'a mut StatsRequestPacket),
-    StatsReply(&'a mut StatsReplyPacket),
-}
-
-impl<'a> Packet<'a> {
-    pub fn try_from_bytes_mut(raw: &'a mut [u8]) -> Option<Packet<'a>> {
-        let magic: u32 = *bytemuck::try_from_bytes(&raw[0..4]).ok()?;
-
-        if magic == MAGIC_TIME {
-            return Some(Packet::Time(bytemuck::try_from_bytes_mut(raw).ok()?));
-        }
-
-        if magic == MAGIC_AUDIO {
-            return Some(Packet::Audio(bytemuck::try_from_bytes_mut(raw).ok()?));
-        }
-
-        if magic == MAGIC_STATS_REQ {
-            return Some(Packet::StatsRequest(bytemuck::try_from_bytes_mut(raw).ok()?));
-        }
-
-        if magic == MAGIC_STATS_REPLY {
-            return Some(Packet::StatsReply(bytemuck::try_from_bytes_mut(raw).ok()?));
-        }
-
-        None
     }
 }
 
