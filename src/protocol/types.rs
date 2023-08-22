@@ -1,15 +1,9 @@
 use bytemuck::{Pod, Zeroable};
-use cpal::{SampleFormat, SampleRate, ChannelCount};
 use nix::time::ClockId;
 use nix::sys::time::TimeValLike;
 
 use crate::stats;
-
-pub const SAMPLE_FORMAT: SampleFormat = SampleFormat::F32;
-pub const SAMPLE_RATE: SampleRate = SampleRate(48000);
-pub const CHANNELS: ChannelCount = 2;
-pub const FRAMES_PER_PACKET: usize = 160;
-pub const SAMPLES_PER_PACKET: usize = CHANNELS as usize * FRAMES_PER_PACKET;
+use crate::protocol;
 
 pub const MAGIC_AUDIO: u32       = 0x00a79ae2;
 pub const MAGIC_TIME: u32        = 0x01a79ae2;
@@ -132,7 +126,7 @@ bitflags::bitflags! {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct PacketBuffer(pub [f32; SAMPLES_PER_PACKET]);
+pub struct PacketBuffer(pub [f32; protocol::SAMPLES_PER_PACKET]);
 
 /// SAFETY: Pod is impl'd for f32, and [T: Pod; N: usize]
 /// but for some reason doesn't like N == SAMPLES_PER_PACKET?
@@ -142,7 +136,7 @@ unsafe impl Pod for PacketBuffer {}
 /// but for some reason doesn't like N == SAMPLES_PER_PACKET?
 unsafe impl Zeroable for PacketBuffer {
     fn zeroed() -> Self {
-        PacketBuffer([0f32; SAMPLES_PER_PACKET])
+        PacketBuffer([0f32; protocol::SAMPLES_PER_PACKET])
     }
 }
 
@@ -163,10 +157,8 @@ unsafe impl Zeroable for TimePacketPadding {
 // TimePacket::_pad field
 static_assertions::assert_eq_size!(AudioPacket, TimePacket);
 
-pub const MAX_PACKET_SIZE: usize = ::std::mem::size_of::<PacketUnion>();
-
 #[repr(C)]
-union PacketUnion {
+pub union PacketUnion {
     _1: AudioPacket,
     _2: TimePacket,
     _3: StatsRequestPacket,

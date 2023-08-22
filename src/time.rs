@@ -1,4 +1,5 @@
-use crate::protocol::{self, TimestampMicros, TimePacket};
+use crate::protocol;
+use crate::protocol::types::{TimestampMicros, TimePacket};
 
 /// A timestamp with implicit denominator SAMPLE_RATE
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]

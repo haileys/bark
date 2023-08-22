@@ -6,7 +6,8 @@ use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
-use crate::protocol::{self, Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, MAX_PACKET_SIZE, TimePacketPadding, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
+use crate::protocol;
+use crate::protocol::types::{Packet, TimestampMicros, AudioPacket, PacketBuffer, TimePacket, TimePacketPadding, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
 use crate::socket::{Socket, SocketOpt};
 use crate::stats::node::NodeStats;
 use crate::stats::receiver::ReceiverStats;
@@ -57,7 +58,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let node = NodeStats::get();
 
     let mut packet = AudioPacket {
-        magic: protocol::MAGIC_AUDIO,
+        magic: protocol::types::MAGIC_AUDIO,
         flags: 0,
         sid,
         seq: 1,
@@ -140,7 +141,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 let now = TimestampMicros::now();
 
                 let packet = TimePacket {
-                    magic: protocol::MAGIC_TIME,
+                    magic: protocol::types::MAGIC_TIME,
                     flags: 0,
                     sid,
                     rid: ReceiverId::broadcast(),
@@ -164,7 +165,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     crate::thread::set_realtime_priority();
 
     loop {
-        let mut packet_raw = [0u8; MAX_PACKET_SIZE];
+        let mut packet_raw = [0u8; protocol::MAX_PACKET_SIZE];
 
         let (nbytes, addr) = socket.recv_from(&mut packet_raw)
             .expect("socket.recv_from");
@@ -200,7 +201,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             }
             Some(Packet::StatsRequest(_)) => {
                 let reply = StatsReplyPacket {
-                    magic: protocol::MAGIC_STATS_REPLY,
+                    magic: protocol::types::MAGIC_STATS_REPLY,
                     flags: StatsReplyFlags::IS_STREAM,
                     sid: sid,
                     receiver: ReceiverStats::zeroed(),

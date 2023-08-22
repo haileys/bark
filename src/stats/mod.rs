@@ -13,7 +13,8 @@ use bytemuck::Zeroable;
 use structopt::StructOpt;
 use termcolor::BufferedStandardStream;
 
-use crate::protocol::{StatsRequestPacket, self, StatsReplyPacket, StatsReplyFlags};
+use crate::protocol;
+use crate::protocol::types::{StatsRequestPacket, StatsReplyPacket, StatsReplyFlags};
 use crate::socket::{Socket, SocketOpt};
 use crate::RunError;
 
@@ -37,7 +38,7 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
         move || {
             loop {
                 let packet = StatsRequestPacket {
-                    magic: protocol::MAGIC_STATS_REQ,
+                    magic: protocol::types::MAGIC_STATS_REQ,
                     flags: 0,
                 };
 
@@ -59,7 +60,7 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
             continue;
         }
 
-        if reply.magic != protocol::MAGIC_STATS_REPLY {
+        if reply.magic != protocol::types::MAGIC_STATS_REPLY {
             continue;
         }
 

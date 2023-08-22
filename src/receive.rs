@@ -8,7 +8,8 @@ use cpal::{SampleRate, OutputCallbackInfo};
 use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use crate::protocol::{AudioPacket, self, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
+use crate::protocol;
+use crate::protocol::types::{AudioPacket, TimePacket, TimestampMicros, Packet, SessionId, ReceiverId, TimePhase, StatsReplyPacket, StatsReplyFlags};
 use crate::resample::Resampler;
 use crate::socket::{Socket, SocketOpt};
 use crate::stats::node::NodeStats;
@@ -577,7 +578,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 drop(state);
 
                 let reply = StatsReplyPacket {
-                    magic: protocol::MAGIC_STATS_REPLY,
+                    magic: protocol::types::MAGIC_STATS_REPLY,
                     flags: StatsReplyFlags::IS_RECEIVER,
                     sid: sid.unwrap_or(SessionId::zeroed()),
                     receiver: stats,

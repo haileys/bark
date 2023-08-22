@@ -2,9 +2,9 @@ use std::net::SocketAddrV4;
 
 use termcolor::{WriteColor, ColorSpec, Color};
 
+use crate::protocol::types::{StatsReplyPacket, StatsReplyFlags};
 use crate::stats::receiver::{ReceiverStats, StreamStatus};
 use crate::stats::node::NodeStats;
-use crate::protocol::{StatsReplyPacket, StatsReplyFlags};
 
 #[derive(Default)]
 pub struct Padding {
