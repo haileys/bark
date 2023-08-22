@@ -101,20 +101,11 @@ impl Packet {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        &self.as_raw_buffer()[0..self.len()]
-    }
-
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        let len = self.len();
-        &mut self.as_raw_buffer_mut()[0..len]
-    }
-
-    fn as_raw_buffer(&self) -> &[u8] {
         let header_size = size_of::<types::PacketHeader>();
         &self.0.as_bytes()[header_size..]
     }
 
-    fn as_raw_buffer_mut(&mut self) -> &mut [u8] {
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         let header_size = size_of::<types::PacketHeader>();
         &mut self.0.as_bytes_mut()[header_size..]
     }
