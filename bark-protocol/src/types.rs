@@ -1,9 +1,8 @@
 use bytemuck::{Pod, Zeroable};
-use nix::time::ClockId;
-use nix::sys::time::TimeValLike;
 
-use crate::stats;
-use crate::protocol;
+pub mod stats;
+
+use crate::SAMPLES_PER_PACKET;
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, Eq)]
 #[repr(transparent)]
@@ -50,7 +49,7 @@ pub struct AudioPacketHeader {
     pub dts: TimestampMicros,
 }
 
-pub type AudioPacketBuffer = [f32; protocol::SAMPLES_PER_PACKET];
+pub type AudioPacketBuffer = [f32; SAMPLES_PER_PACKET];
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
@@ -120,21 +119,9 @@ bitflags::bitflags! {
 #[repr(transparent)]
 pub struct TimestampMicros(pub u64);
 
-impl TimestampMicros {
-    pub fn now() -> TimestampMicros {
-        let timespec = nix::time::clock_gettime(ClockId::CLOCK_BOOTTIME)
-            .expect("clock_gettime(CLOCK_BOOTTIME) failed, are we on Linux?");
-
-        let micros = u64::try_from(timespec.num_microseconds())
-            .expect("cannot convert i64 time value to u64");
-
-        TimestampMicros(micros)
-    }
-}
-
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(transparent)]
-pub struct ReceiverId(u64);
+pub struct ReceiverId(pub u64);
 
 impl ReceiverId {
     pub fn broadcast() -> Self {
@@ -148,21 +135,8 @@ impl ReceiverId {
     pub fn matches(&self, this: &ReceiverId) -> bool {
         self.is_broadcast() || self.0 == this.0
     }
-
-    pub fn generate() -> Self {
-        ReceiverId(rand::random())
-    }
 }
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub struct SessionId(i64);
-
-impl SessionId {
-    pub fn generate() -> Self {
-        let timespec = nix::time::clock_gettime(ClockId::CLOCK_REALTIME)
-            .expect("clock_gettime(CLOCK_REALTIME)");
-
-        SessionId(timespec.num_microseconds())
-    }
-}
+pub struct SessionId(pub i64);

@@ -1,5 +1,4 @@
 pub mod node;
-pub mod receiver;
 pub mod render;
 
 use std::collections::HashMap;
@@ -10,10 +9,10 @@ use std::io::Write;
 use structopt::StructOpt;
 use termcolor::BufferedStandardStream;
 
-use crate::protocol::Protocol;
-use crate::protocol::packet::{StatsRequest, StatsReply, PacketKind};
-use crate::protocol::types::StatsReplyFlags;
-use crate::socket::{Socket, SocketOpt, PeerId};
+use bark_protocol::packet::{StatsRequest, StatsReply, PacketKind};
+use bark_protocol::types::StatsReplyFlags;
+
+use crate::socket::{Socket, SocketOpt, PeerId, ProtocolSocket};
 use crate::RunError;
 
 use self::render::Padding;
@@ -28,7 +27,7 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
-    let protocol = Arc::new(Protocol::new(socket));
+    let protocol = Arc::new(ProtocolSocket::new(socket));
 
     // spawn poller thread
     std::thread::spawn({

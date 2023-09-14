@@ -63,6 +63,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 name = "bark"
 version = "0.1.0"
 dependencies = [
+ "bark-protocol",
  "bitflags 2.4.0",
  "bytemuck",
  "cpal",
@@ -78,6 +79,16 @@ dependencies = [
  "termcolor",
  "toml",
  "xdg",
+]
+
+[[package]]
+name = "bark-protocol"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.4.0",
+ "bytemuck",
+ "derive_more",
+ "rand",
 ]
 
 [[package]]

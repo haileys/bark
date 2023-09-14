@@ -1,10 +1,12 @@
 use termcolor::{WriteColor, ColorSpec, Color};
 
-use crate::protocol::packet::StatsReply;
-use crate::protocol::types::{StatsReplyPacket, StatsReplyFlags};
+use bark_protocol::packet::StatsReply;
+use bark_protocol::types::{StatsReplyPacket, StatsReplyFlags};
+use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
+use bark_protocol::types::stats::node::NodeStats;
+
 use crate::socket::PeerId;
-use crate::stats::receiver::{ReceiverStats, StreamStatus};
-use crate::stats::node::NodeStats;
+use super::node;
 
 #[derive(Default)]
 pub struct Padding {
@@ -13,7 +15,7 @@ pub struct Padding {
 }
 
 pub fn calculate(padding: &mut Padding, stats: &StatsReplyPacket, peer: PeerId) {
-    let node_width = stats.node.display().len();
+    let node_width = node::display(&stats.node).len();
     let peer_width = peer.to_string().len();
 
     padding.node_width = std::cmp::max(padding.node_width, node_width);
@@ -39,7 +41,7 @@ fn node(out: &mut dyn WriteColor, padding: &Padding, node: &NodeStats, peer: Pee
         .set_fg(Some(Color::Blue))
         .set_bold(true));
 
-    let _ = write!(out, "{:<width$}  ", node.display(), width = padding.node_width);
+    let _ = write!(out, "{:<width$}  ", node::display(node), width = padding.node_width);
 
     let _ = out.set_color(&ColorSpec::new()
         .set_dimmed(true));

@@ -7,6 +7,9 @@ use nix::poll::{PollFd, PollFlags};
 use socket2::{Domain, Type};
 use structopt::StructOpt;
 
+use bark_protocol::packet::Packet;
+use bark_protocol::packet::PacketBuffer;
+
 // expedited forwarding - IP header field indicating that switches should
 // prioritise our packets for minimal delay
 const IPTOS_DSCP_EF: u32 = 0xb8;
@@ -114,4 +117,35 @@ fn bind_socket(bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
     socket.bind(&bind.into()).map_err(|e| ListenError::Bind(bind, e))?;
 
     Ok(socket)
+}
+
+pub struct ProtocolSocket {
+    socket: Socket,
+}
+
+impl ProtocolSocket {
+    pub fn new(socket: Socket) -> Self {
+        ProtocolSocket { socket }
+    }
+
+    pub fn broadcast(&self, packet: &Packet) -> Result<(), io::Error> {
+        self.socket.broadcast(packet.as_buffer().as_bytes())
+    }
+
+    pub fn send_to(&self, packet: &Packet, peer: PeerId) -> Result<(), io::Error> {
+        self.socket.send_to(packet.as_buffer().as_bytes(), peer)
+    }
+
+    pub fn recv_from(&self) -> Result<(Packet, PeerId), io::Error> {
+        loop {
+            let mut buffer = PacketBuffer::allocate();
+
+            let (nbytes, peer) = self.socket.recv_from(buffer.as_full_buffer_mut())?;
+            buffer.set_len(nbytes);
+
+            if let Some(packet) = Packet::from_buffer(buffer) {
+                return Ok((packet, peer));
+            }
+        }
+    }
 }

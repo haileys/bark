@@ -1,6 +1,5 @@
 mod audio;
 mod config;
-mod protocol;
 mod receive;
 mod resample;
 mod socket;

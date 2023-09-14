@@ -5,13 +5,12 @@ use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
-use crate::protocol::{self, Protocol};
-use crate::protocol::packet::{self, Audio, StatsReply, PacketKind};
-use crate::protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
-use crate::socket::{Socket, SocketOpt};
-use crate::stats::node::NodeStats;
-use crate::time::{SampleDuration, Timestamp};
-use crate::util;
+use bark_protocol::time::{SampleDuration, Timestamp};
+use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
+use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
+
+use crate::socket::{Socket, SocketOpt, ProtocolSocket};
+use crate::{util, stats, time};
 use crate::RunError;
 
 #[derive(StructOpt)]
@@ -48,13 +47,13 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
-    let protocol = Arc::new(Protocol::new(socket));
+    let protocol = Arc::new(ProtocolSocket::new(socket));
 
     let delay = Duration::from_millis(opt.delay_ms);
     let delay = SampleDuration::from_std_duration_lossy(delay);
 
-    let sid = SessionId::generate();
-    let node = NodeStats::get();
+    let sid = generate_session_id();
+    let node = stats::node::get();
 
     let mut audio_header = AudioPacketHeader {
         sid,
@@ -77,9 +76,9 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 }
 
                 // assert data only contains complete frames:
-                assert!(data.len() % usize::from(protocol::CHANNELS) == 0);
+                assert!(data.len() % usize::from(bark_protocol::CHANNELS) == 0);
 
-                let mut timestamp = Timestamp::now().add(delay);
+                let mut timestamp = Timestamp::from_micros_lossy(time::now()).add(delay);
 
                 if audio_header.pts.0 == 0 {
                     audio_header.pts = timestamp.to_micros_lossy();
@@ -100,7 +99,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
                         // finalize packet
                         let audio_packet = audio.finalize(AudioPacketHeader {
-                            dts: TimestampMicros::now(),
+                            dts: time::now(),
                             ..audio_header
                         });
 
@@ -143,7 +142,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             data.rid = ReceiverId::broadcast();
 
             loop {
-                time.data_mut().stream_1 = TimestampMicros::now();
+                time.data_mut().stream_1 = time::now();
 
                 protocol.broadcast(time.as_packet())
                     .expect("broadcast time");
@@ -178,7 +177,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
                 match time.data().phase() {
                     Some(TimePhase::ReceiverReply) => {
-                        time.data_mut().stream_3 = TimestampMicros::now();
+                        time.data_mut().stream_3 = time::now();
 
                         protocol.send_to(time.as_packet(), peer)
                             .expect("protocol.send_to responding to time packet");
@@ -204,4 +203,13 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     }
 
     Ok(())
+}
+
+pub fn generate_session_id() -> SessionId {
+    use nix::sys::time::TimeValLike;
+
+    let timespec = nix::time::clock_gettime(nix::time::ClockId::CLOCK_REALTIME)
+        .expect("clock_gettime(CLOCK_REALTIME)");
+
+    SessionId(timespec.num_microseconds())
 }

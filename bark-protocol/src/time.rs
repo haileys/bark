@@ -1,21 +1,15 @@
-use crate::protocol;
-use crate::protocol::packet;
-use crate::protocol::types::TimestampMicros;
+use crate::packet;
+use crate::types::{TimestampMicros};
+use crate::{SAMPLE_RATE, FRAMES_PER_PACKET, CHANNELS};
 
 /// A timestamp with implicit denominator SAMPLE_RATE
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp(u64);
 
 impl Timestamp {
-    pub fn now() -> Timestamp {
-        Timestamp::from_micros_lossy(TimestampMicros::now())
-    }
-}
-
-impl Timestamp {
     pub fn to_micros_lossy(&self) -> TimestampMicros {
         let ts = u128::from(self.0);
-        let micros = (ts * 1_000_000) / u128::from(protocol::SAMPLE_RATE.0);
+        let micros = (ts * 1_000_000) / u128::from(SAMPLE_RATE.0);
         let micros = u64::try_from(micros)
             .expect("can't narrow timestamp to u64");
         TimestampMicros(micros)
@@ -23,7 +17,7 @@ impl Timestamp {
 
     pub fn from_micros_lossy(micros: TimestampMicros) -> Timestamp {
         let micros = u128::from(micros.0);
-        let ts = (micros * u128::from(protocol::SAMPLE_RATE.0)) / 1_000_000;
+        let ts = (micros * u128::from(SAMPLE_RATE.0)) / 1_000_000;
         let ts = u64::try_from(ts)
             .expect("can't narrow timestamp to u64");
         Timestamp(ts)
@@ -53,7 +47,7 @@ impl Timestamp {
 pub struct SampleDuration(u64);
 
 impl SampleDuration {
-    pub const ONE_PACKET: SampleDuration = SampleDuration::from_frame_count(protocol::FRAMES_PER_PACKET as u64);
+    pub const ONE_PACKET: SampleDuration = SampleDuration::from_frame_count(FRAMES_PER_PACKET as u64);
 
     pub const fn zero() -> Self {
         SampleDuration(0)
@@ -64,24 +58,24 @@ impl SampleDuration {
     }
 
     pub fn from_std_duration_lossy(duration: std::time::Duration) -> SampleDuration {
-        let duration = (duration.as_micros() * u128::from(protocol::SAMPLE_RATE.0)) / 1_000_000;
+        let duration = (duration.as_micros() * u128::from(SAMPLE_RATE)) / 1_000_000;
         let duration = u64::try_from(duration).expect("can't narrow duration to u64");
         SampleDuration(duration)
     }
 
     pub fn to_std_duration_lossy(&self) -> std::time::Duration {
-        let usecs = (u128::from(self.0) * 1_000_000) / u128::from(protocol::SAMPLE_RATE.0);
+        let usecs = (u128::from(self.0) * 1_000_000) / u128::from(SAMPLE_RATE);
         let usecs = u64::try_from(usecs).expect("can't narrow usecs to u64");
         std::time::Duration::from_micros(usecs)
     }
 
     pub fn as_buffer_offset(&self) -> usize {
-        let offset = self.0 * u64::from(protocol::CHANNELS);
+        let offset = self.0 * u64::from(CHANNELS);
         usize::try_from(offset).unwrap()
     }
 
     pub fn from_buffer_offset(offset: usize) -> Self {
-        let channels = usize::from(protocol::CHANNELS);
+        let channels = usize::from(CHANNELS);
         assert!(offset % channels == 0);
 
         SampleDuration(u64::try_from(offset / channels).unwrap())
@@ -130,7 +124,7 @@ pub struct TimestampDelta(i64);
 
 impl TimestampDelta {
     pub fn from_clock_delta_lossy(delta: ClockDelta) -> TimestampDelta {
-        TimestampDelta((delta.0 * i64::from(protocol::SAMPLE_RATE.0)) / 1_000_000)
+        TimestampDelta((delta.0 * i64::from(SAMPLE_RATE.0)) / 1_000_000)
     }
 
     pub fn abs(&self) -> SampleDuration {

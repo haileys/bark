@@ -1,28 +1,19 @@
-use bytemuck::{Zeroable, Pod};
+use bark_protocol::types::stats::node::NodeStats;
 
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-#[repr(C)]
-pub struct NodeStats {
-    pub username: [u8; 32],
-    pub hostname: [u8; 32],
+pub fn get() -> NodeStats {
+    let username = get_username();
+    let hostname = get_hostname();
+
+    NodeStats {
+        username: as_fixed(&username),
+        hostname: as_fixed(&hostname),
+    }
 }
 
-impl NodeStats {
-    pub fn get() -> Self {
-        let username = get_username();
-        let hostname = get_hostname();
-
-        NodeStats {
-            username: as_fixed(&username),
-            hostname: as_fixed(&hostname),
-        }
-    }
-
-    pub fn display(&self) -> String {
-        let username = from_fixed(&self.username);
-        let hostname = from_fixed(&self.hostname);
-        format!("{username}@{hostname}")
-    }
+pub fn display(stats: &NodeStats) -> String {
+    let username = from_fixed(&stats.username);
+    let hostname = from_fixed(&stats.hostname);
+    format!("{username}@{hostname}")
 }
 
 fn from_fixed(bytes: &[u8]) -> &str {

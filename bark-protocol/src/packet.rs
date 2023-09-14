@@ -1,12 +1,11 @@
 use std::mem::size_of;
 
 use bytemuck::Zeroable;
-pub use cpal::{SampleFormat, SampleRate, ChannelCount};
 
-use crate::stats::node::NodeStats;
-use crate::stats::receiver::ReceiverStats;
+use crate::types::stats::node::NodeStats;
+use crate::types::stats::receiver::ReceiverStats;
+use crate::types::{self, Magic};
 use crate::time::SampleDuration;
-use crate::protocol::types::{self, Magic};
 
 use super::types::{AudioPacketHeader, StatsReplyFlags, SessionId};
 
