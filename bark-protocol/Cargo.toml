@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bark-alloc = { workspace = true }
+
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 derive_more = { workspace = true }

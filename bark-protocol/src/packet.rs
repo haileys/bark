@@ -18,7 +18,7 @@ pub const MAX_PACKET_SIZE: usize =
     size_of::<types::AudioPacketBuffer>();
 
 pub struct PacketBuffer {
-    raw: alloc::boxed::Box<[u8]>,
+    raw: bark_alloc::FixedBuffer<MAX_PACKET_SIZE>,
     len: usize,
 }
 
@@ -31,7 +31,7 @@ impl Debug for PacketBuffer {
 impl PacketBuffer {
     pub fn allocate() -> Self {
         PacketBuffer {
-            raw: bytemuck::allocation::zeroed_slice_box(MAX_PACKET_SIZE),
+            raw: bark_alloc::FixedBuffer::alloc_zeroed(),
             len: 0,
         }
     }
