@@ -98,7 +98,6 @@ dependencies = [
  "bitflags 2.4.0",
  "bytemuck",
  "derive_more",
- "rand",
 ]
 
 [[package]]

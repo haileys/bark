@@ -15,7 +15,7 @@ cpal = "0.15.2"
 derive_more = { workspace = true }
 libc = "0.2.147"
 nix = { version = "0.26.2", features = ["time", "socket", "net", "poll", "user", "hostname"], default-features = false }
-rand = { workspace = true, features = ["default"] }
+rand = "0.8.5"
 serde = { version = "1.0.183", features = ["derive"] }
 serde_json = "1.0.105"
 socket2 = "0.5.3"

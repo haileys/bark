@@ -13,4 +13,3 @@ bark-protocol = { path = "bark-protocol" }
 bitflags = { version = "2.4.0", features = ["bytemuck"] }
 bytemuck = { version = "1.13", features = ["derive"] }
 derive_more = { version = "0.99" }
-rand = { version = "0.8.5", no-default-features = true }
