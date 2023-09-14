@@ -1,24 +1,14 @@
 #![no_std]
 
-#[cfg(not(feature = "alloc"))]
+#[cfg(not(any(feature = "alloc", feature = "esp_alloc")))]
 compile_error!("must enable alloc feature!");
 
 #[cfg(feature = "alloc")]
-mod impl_ {
-    extern crate alloc;
+#[path = "alloc_box_impl.rs"]
+mod impl_;
 
-    use derive_more::{Deref, DerefMut};
-
-    #[repr(transparent)]
-    #[derive(Deref, DerefMut)]
-    #[deref(forward)]
-    pub struct FixedBuffer<const N: usize>(alloc::boxed::Box<[u8]>);
-
-    impl<const N: usize> FixedBuffer<N> {
-        pub fn alloc_zeroed() -> Self {
-            FixedBuffer(bytemuck::allocation::zeroed_slice_box(N))
-        }
-    }
-}
+#[cfg(feature = "esp_alloc")]
+#[path = "esp_alloc_impl.rs"]
+mod impl_;
 
 pub use impl_::*;

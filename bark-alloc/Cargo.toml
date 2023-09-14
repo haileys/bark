@@ -5,7 +5,9 @@ edition = "2021"
 
 [features]
 alloc = ["bytemuck/extern_crate_alloc"]
+esp_alloc = ["esp-alloc"]
 
 [dependencies]
+esp-alloc = { version = "0.3", optional = true }
 bytemuck = { workspace = true, optional = true }
 derive_more = { workspace = true }
