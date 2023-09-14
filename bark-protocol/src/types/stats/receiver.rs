@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use bitflags::bitflags;
 use bytemuck::{Zeroable, Pod};
 
@@ -116,7 +114,7 @@ impl ReceiverStats {
         self.flags.insert(ReceiverStatsFlags::HAS_BUFFER_LENGTH);
     }
 
-    pub fn set_network_latency(&mut self, latency: Duration) {
+    pub fn set_network_latency(&mut self, latency: core::time::Duration) {
         self.network_latency = latency.as_micros() as f64 / 1_000_000.0;
         self.flags.insert(ReceiverStatsFlags::HAS_NETWORK_LATENCY);
     }

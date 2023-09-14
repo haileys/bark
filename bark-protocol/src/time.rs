@@ -1,5 +1,5 @@
 use crate::packet;
-use crate::types::{TimestampMicros};
+use crate::types::TimestampMicros;
 use crate::{SAMPLE_RATE, FRAMES_PER_PACKET, CHANNELS};
 
 /// A timestamp with implicit denominator SAMPLE_RATE
@@ -57,16 +57,16 @@ impl SampleDuration {
         SampleDuration(samples)
     }
 
-    pub fn from_std_duration_lossy(duration: std::time::Duration) -> SampleDuration {
+    pub fn from_std_duration_lossy(duration: core::time::Duration) -> SampleDuration {
         let duration = (duration.as_micros() * u128::from(SAMPLE_RATE)) / 1_000_000;
         let duration = u64::try_from(duration).expect("can't narrow duration to u64");
         SampleDuration(duration)
     }
 
-    pub fn to_std_duration_lossy(&self) -> std::time::Duration {
+    pub fn to_std_duration_lossy(&self) -> core::time::Duration {
         let usecs = (u128::from(self.0) * 1_000_000) / u128::from(SAMPLE_RATE);
         let usecs = u64::try_from(usecs).expect("can't narrow usecs to u64");
-        std::time::Duration::from_micros(usecs)
+        core::time::Duration::from_micros(usecs)
     }
 
     pub fn as_buffer_offset(&self) -> usize {

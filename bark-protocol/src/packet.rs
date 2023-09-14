@@ -1,4 +1,7 @@
-use std::mem::size_of;
+use core::cmp;
+use core::mem::size_of;
+use core::fmt::{self, Debug};
+use core::ops::Range;
 
 use bytemuck::Zeroable;
 
@@ -15,12 +18,12 @@ pub const MAX_PACKET_SIZE: usize =
     size_of::<types::AudioPacketBuffer>();
 
 pub struct PacketBuffer {
-    raw: Box<[u8]>,
+    raw: alloc::boxed::Box<[u8]>,
     len: usize,
 }
 
-impl std::fmt::Debug for PacketBuffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for PacketBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PacketBuffer {{ len = {}; {:x?} }}", self.len, &self.raw[0..self.len])
     }
 }
@@ -213,7 +216,7 @@ impl AudioWriter {
 
     pub fn write(&mut self, audio: &[f32]) -> SampleDuration {
         let input_duration = SampleDuration::from_buffer_offset(audio.len());
-        let copy_duration = std::cmp::min(input_duration, self.remaining());
+        let copy_duration = cmp::min(input_duration, self.remaining());
 
         let copy_len = copy_duration.as_buffer_offset();
         let source_buffer = &audio[0..copy_len];
@@ -247,7 +250,7 @@ impl Time {
 
     // time packets are padded so that they are
     // the same length as audio packets:
-    const DATA_RANGE: std::ops::Range<usize> =
+    const DATA_RANGE: Range<usize> =
         0..size_of::<types::TimePacket>();
 
     pub fn allocate() -> Self {
