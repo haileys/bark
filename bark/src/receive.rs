@@ -576,7 +576,9 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 let receiver = *state.recv.stats();
                 drop(state);
 
-                let reply = StatsReply::receiver(sid, receiver, node);
+                let reply = StatsReply::receiver(sid, receiver, node)
+                    .expect("allocate StatsReply packet");
+
                 let _ = protocol.send_to(reply.as_packet(), peer);
             }
             Some(PacketKind::StatsReply(_)) => {

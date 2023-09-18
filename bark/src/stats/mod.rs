@@ -33,7 +33,9 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
     std::thread::spawn({
         let protocol = Arc::clone(&protocol);
         move || {
-            let request = StatsRequest::new();
+            let request = StatsRequest::new()
+                .expect("allocate StatsRequest packet");
+
             loop {
                 let _ = protocol.broadcast(request.as_packet());
                 std::thread::sleep(Duration::from_millis(100));

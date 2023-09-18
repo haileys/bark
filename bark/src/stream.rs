@@ -62,7 +62,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
         dts: TimestampMicros(0),
     };
 
-    let mut audio_buffer = Audio::write();
+    let mut audio_buffer = Audio::write()
+        .expect("allocate Audio packet");
 
     let stream = device.build_input_stream(&config,
         {
@@ -95,7 +96,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                     // if packet buffer is full, finalize it and send off the packet:
                     if audio_buffer.valid_length() {
                         // take packet writer and replace with new
-                        let audio = std::mem::replace(&mut audio_buffer, Audio::write());
+                        let audio = std::mem::replace(&mut audio_buffer,
+                            Audio::write().expect("allocate Audio packet"));
 
                         // finalize packet
                         let audio_packet = audio.finalize(AudioPacketHeader {
@@ -134,7 +136,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
         let protocol = Arc::clone(&protocol);
         move || {
-            let mut time = packet::Time::allocate();
+            let mut time = packet::Time::allocate()
+                .expect("allocate Time packet");
 
             // set up packet
             let data = time.data_mut();
@@ -190,7 +193,9 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
             }
             Some(PacketKind::StatsRequest(_)) => {
-                let reply = StatsReply::source(sid, node);
+                let reply = StatsReply::source(sid, node)
+                    .expect("allocate StatsReply packet");
+
                 let _ = protocol.send_to(reply.as_packet(), peer);
             }
             Some(PacketKind::StatsReply(_)) => {

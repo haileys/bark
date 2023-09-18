@@ -138,7 +138,8 @@ impl ProtocolSocket {
 
     pub fn recv_from(&self) -> Result<(Packet, PeerId), io::Error> {
         loop {
-            let mut buffer = PacketBuffer::allocate();
+            let mut buffer = PacketBuffer::allocate()
+                .expect("allocate PacketBuffer");
 
             let (nbytes, peer) = self.socket.recv_from(buffer.as_full_buffer_mut())?;
             buffer.set_len(nbytes);
