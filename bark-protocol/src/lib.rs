@@ -1,8 +1,9 @@
 #![no_std]
 
+pub mod buffer;
+pub mod packet;
 pub mod time;
 pub mod types;
-pub mod packet;
 
 pub const SAMPLE_RATE: SampleRate = SampleRate(48000);
 pub const CHANNELS: ChannelCount = ChannelCount(2);
