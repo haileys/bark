@@ -1,45 +1,45 @@
 use core::fmt::{self, Debug};
 
-use crate::packet::MAX_PACKET_SIZE;
+pub mod raw;
+pub use raw::RawBuffer;
 
-pub use bark_alloc::AllocError;
+use raw::BufferImpl;
+
+#[derive(Debug, Copy, Clone)]
+pub struct AllocError {
+    pub requested_bytes: usize,
+}
 
 pub struct PacketBuffer {
-    raw: bark_alloc::FixedBuffer<MAX_PACKET_SIZE>,
-    len: usize,
+    raw: BufferImpl,
 }
 
 impl Debug for PacketBuffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PacketBuffer {{ len = {}; {:x?} }}", self.len, &self.raw[0..self.len])
+        write!(f, "PacketBuffer {{ len = {}; {:x?} }}", self.len(), &self.as_bytes())
     }
 }
 
 impl PacketBuffer {
-    pub fn allocate() -> Result<Self, AllocError> {
+    pub fn allocate(len: usize) -> Result<Self, AllocError> {
         Ok(PacketBuffer {
-            raw: bark_alloc::FixedBuffer::alloc_zeroed()?,
-            len: 0,
+            raw: BufferImpl::allocate_zeroed(len)?,
         })
     }
 
-    pub fn len(&self) -> usize {
-        self.len
+    pub fn from_raw(raw: RawBuffer) -> Self {
+        PacketBuffer { raw: BufferImpl::from_raw(raw) }
     }
 
-    pub fn set_len(&mut self, len: usize) {
-        self.len = len;
+    pub fn len(&self) -> usize {
+        self.raw.len()
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        &self.raw[0..self.len]
+        self.raw.bytes()
     }
 
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut self.raw[0..self.len]
-    }
-
-    pub fn as_full_buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.raw
+        self.raw.bytes_mut()
     }
 }

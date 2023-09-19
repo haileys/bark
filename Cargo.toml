@@ -2,12 +2,10 @@
 resolver = "2"
 members = [
     "bark",
-    "bark-alloc",
     "bark-protocol",
 ]
 
 [workspace.dependencies]
-bark-alloc = { path = "bark-alloc" }
 bark-protocol = { path = "bark-protocol" }
 
 bitflags = { version = "2.4.0", features = ["bytemuck"] }
