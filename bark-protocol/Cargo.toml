@@ -3,9 +3,12 @@ name = "bark-protocol"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-bark-alloc = { workspace = true }
+[features]
+default = ["alloc"]
+alloc = ["bytemuck/extern_crate_alloc"]
+pbuf = []
 
+[dependencies]
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 derive_more = { workspace = true }

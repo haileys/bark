@@ -6,8 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bark-alloc = { workspace = true, features = ["alloc"] }
-bark-protocol = { workspace = true }
+bark-protocol = { workspace = true, features = ["alloc"] }
 
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }

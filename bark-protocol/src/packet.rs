@@ -1,71 +1,29 @@
 use core::cmp;
 use core::mem::size_of;
-use core::fmt::{self, Debug};
 use core::ops::Range;
 
 use bytemuck::Zeroable;
 
+use crate::buffer::{AllocError, PacketBuffer};
 use crate::types::stats::node::NodeStats;
 use crate::types::stats::receiver::ReceiverStats;
-use crate::types::{self, Magic};
+use crate::types::{self, AudioPacketHeader, Magic, SessionId, StatsReplyFlags};
 use crate::time::SampleDuration;
-
-use super::types::{AudioPacketHeader, StatsReplyFlags, SessionId};
-
-pub use bark_alloc::AllocError;
 
 pub const MAX_PACKET_SIZE: usize =
     size_of::<types::PacketHeader>() +
     size_of::<types::AudioPacketHeader>() +
     size_of::<types::AudioPacketBuffer>();
 
-pub struct PacketBuffer {
-    raw: bark_alloc::FixedBuffer<MAX_PACKET_SIZE>,
-    len: usize,
-}
-
-impl Debug for PacketBuffer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PacketBuffer {{ len = {}; {:x?} }}", self.len, &self.raw[0..self.len])
-    }
-}
-
-impl PacketBuffer {
-    pub fn allocate() -> Result<Self, AllocError> {
-        Ok(PacketBuffer {
-            raw: bark_alloc::FixedBuffer::alloc_zeroed()?,
-            len: 0,
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn set_len(&mut self, len: usize) {
-        self.len = len;
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.raw[0..self.len]
-    }
-
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut self.raw[0..self.len]
-    }
-
-    pub fn as_full_buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.raw
-    }
-}
-
 #[derive(Debug)]
 pub struct Packet(PacketBuffer);
 
 impl Packet {
     fn allocate(magic: Magic, len: usize) -> Result<Self, AllocError> {
-        let mut packet = Packet(PacketBuffer::allocate()?);
-        packet.set_len(len);
+        let header_size = size_of::<types::PacketHeader>();
+        let packet_len = header_size + len;
+
+        let mut packet = Packet(PacketBuffer::allocate(packet_len)?);
         packet.header_mut().magic = magic;
         Ok(packet)
     }
@@ -108,11 +66,6 @@ impl Packet {
     pub fn len(&self) -> usize {
         let header_size = size_of::<types::PacketHeader>();
         self.0.len() - header_size
-    }
-
-    pub fn set_len(&mut self, len: usize) {
-        let header_size = size_of::<types::PacketHeader>();
-        self.0.set_len(header_size + len);
     }
 
     pub fn as_bytes(&self) -> &[u8] {
