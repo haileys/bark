@@ -18,6 +18,10 @@ impl BufferImpl {
         BufferImpl(vec)
     }
 
+    pub fn into_raw(self) -> RawBuffer {
+        self.0
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }

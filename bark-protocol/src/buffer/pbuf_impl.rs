@@ -48,12 +48,12 @@ impl BufferImpl {
         unsafe { core::slice::from_raw_parts_mut(payload, len) }
     }
 
-    fn pbuf(&self) -> &ffi::pbuf {
+    pub fn pbuf(&self) -> &ffi::pbuf {
         // SAFETY: this struct owns ffi::pbuf
         unsafe { self.0.as_ref() }
     }
 
-    fn pbuf_mut(&mut self) -> &mut ffi::pbuf {
+    pub fn pbuf_mut(&mut self) -> &mut ffi::pbuf {
         // SAFETY: this struct owns ffi::pbuf
         unsafe { self.0.as_mut() }
     }

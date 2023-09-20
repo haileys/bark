@@ -41,6 +41,10 @@ impl PacketBuffer {
         PacketBuffer { underlying }
     }
 
+    pub fn underlying(&self) -> &BufferImpl {
+        &self.underlying
+    }
+
     pub fn len(&self) -> usize {
         self.underlying.len()
     }
