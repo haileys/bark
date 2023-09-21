@@ -1,15 +1,14 @@
 extern crate alloc;
-use alloc::vec::Vec;
-use crate::buffer::AllocError;
 
-pub type RawBuffer = Vec<u8>;
+pub type RawBuffer = alloc::vec::Vec<u8>;
+pub type AllocError = core::convert::Infallible;
 
 #[repr(transparent)]
 pub struct BufferImpl(RawBuffer);
 
 impl BufferImpl {
     pub fn allocate_zeroed(len: usize) -> Result<Self, AllocError> {
-        let mut vec = Vec::with_capacity(len);
+        let mut vec = RawBuffer::with_capacity(len);
         vec.resize(len, 0);
         Ok(BufferImpl(vec))
     }

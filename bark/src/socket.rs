@@ -7,7 +7,6 @@ use nix::poll::{PollFd, PollFlags};
 use socket2::{Domain, Type};
 use structopt::StructOpt;
 
-use bark_protocol::buffer::alloc::BufferImpl;
 use bark_protocol::buffer::PacketBuffer;
 use bark_protocol::packet::Packet;
 
@@ -146,7 +145,7 @@ impl ProtocolSocket {
         assert!(nbytes < buffer.len());
         buffer.resize(nbytes, 0);
 
-        let buffer = PacketBuffer::from_underlying(BufferImpl::from_raw(buffer));
+        let buffer = PacketBuffer::from_raw(buffer);
 
         Ok((buffer, peer))
     }
