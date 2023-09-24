@@ -12,7 +12,7 @@ unsafe impl Sync for BufferImpl {}
 
 impl BufferImpl {
     pub fn allocate_zeroed(len: usize) -> Result<Self, AllocatePbufError> {
-        let pbuf = PbufUninit::allocate(ffi::PBUF_TRANSPORT, len, ffi::PBUF_RAM)?;
+        let pbuf = PbufUninit::allocate(ffi::PBUF_TRANSPORT, ffi::PBUF_RAM, len)?;
         Ok(BufferImpl(pbuf.zeroed()))
     }
 
