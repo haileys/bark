@@ -9,17 +9,16 @@ edition = "2021"
 bark-device = { workspace = true }
 bark-network = { workspace = true }
 bark-protocol = { workspace = true }
+bark-util = { workspace = true }
 
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 cpal = { workspace = true }
 derive_more = { workspace = true }
-libc = "0.2.147"
 nix = { version = "0.26.2", features = ["time", "socket", "net", "poll", "user", "hostname"], default-features = false }
 opus = "0.3.0"
 rand = "0.8.5"
 serde = { version = "1.0.183", features = ["derive"] }
-serde_json = "1.0.105"
 socket2 = "0.5.3"
 static_assertions = "1.1.0"
 structopt = "0.3.26"

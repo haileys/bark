@@ -5,12 +5,14 @@ members = [
     "bark-device",
     "bark-network",
     "bark-protocol",
+    "bark-util",
 ]
 
 [workspace.dependencies]
 bark-device = { path = "bark-device" }
 bark-network = { path = "bark-network" }
 bark-protocol = { path = "bark-protocol" }
+bark-util = { path = "bark-util" }
 
 bitflags = { version = "2.4.0", features = ["bytemuck"] }
 bytemuck = { version = "1.13", features = ["derive"] }

@@ -72,8 +72,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             let mut initialized_thread = false;
             move |mut data: &[f32], _: &InputCallbackInfo| {
                 if !initialized_thread {
-                    crate::thread::set_name("bark/audio");
-                    crate::thread::set_realtime_priority();
+                    bark_util::thread::set_name("bark/audio");
+                    bark_util::thread::set_realtime_priority();
                     initialized_thread = true;
                 }
 
@@ -132,8 +132,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     // set up t1 sender thread
     std::thread::spawn({
-        crate::thread::set_name("bark/clock");
-        crate::thread::set_realtime_priority();
+        bark_util::thread::set_name("bark/clock");
+        bark_util::thread::set_realtime_priority();
 
         let protocol = Arc::clone(&protocol);
         move || {
@@ -158,8 +158,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     stream.play().map_err(RunError::Stream)?;
 
-    crate::thread::set_name("bark/network");
-    crate::thread::set_realtime_priority();
+    bark_util::thread::set_name("bark/network");
+    bark_util::thread::set_realtime_priority();
 
     loop {
         let (packet, peer) = protocol.recv_from().expect("protocol.recv_from");

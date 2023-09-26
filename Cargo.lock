@@ -116,16 +116,15 @@ dependencies = [
  "bark-device",
  "bark-network",
  "bark-protocol",
+ "bark-util",
  "bitflags 2.4.0",
  "bytemuck",
  "cpal",
  "derive_more",
- "libc",
  "nix 0.26.2",
  "opus",
  "rand",
  "serde",
- "serde_json",
  "socket2",
  "static_assertions",
  "structopt",
@@ -163,6 +162,13 @@ dependencies = [
  "bytemuck",
  "derive_more",
  "esp-pbuf",
+]
+
+[[package]]
+name = "bark-util"
+version = "0.0.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

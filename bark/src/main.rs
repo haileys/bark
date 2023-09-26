@@ -3,7 +3,6 @@ mod receive;
 mod resample;
 mod stats;
 mod stream;
-mod thread;
 mod time;
 
 use std::process::ExitCode;
