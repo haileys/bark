@@ -2,8 +2,7 @@ use std::ffi::{c_void, c_int, CStr};
 use std::fmt::Debug;
 use std::ptr;
 
-use crate::protocol;
-use crate::time::SampleDuration;
+use bark_protocol::time::SampleDuration;
 
 use self::ffi::speex_resampler_strerror;
 
@@ -59,9 +58,9 @@ impl Resampler {
 
         let ptr = unsafe {
             ffi::speex_resampler_init(
-                u32::from(protocol::CHANNELS),
-                protocol::SAMPLE_RATE.0,
-                protocol::SAMPLE_RATE.0,
+                bark_protocol::CHANNELS.into(),
+                bark_protocol::SAMPLE_RATE.into(),
+                bark_protocol::SAMPLE_RATE.into(),
                 10,
                 &mut err
             )
@@ -83,7 +82,7 @@ impl Resampler {
             ffi::speex_resampler_set_rate(
                 self.ptr.0,
                 rate,
-                protocol::SAMPLE_RATE.0,
+                bark_protocol::SAMPLE_RATE.into(),
             )
         };
 
@@ -98,8 +97,8 @@ impl Resampler {
         -> Result<ProcessResult, SpeexError>
     {
         // speex API takes frame count:
-        let input_len = input.len() / usize::from(protocol::CHANNELS);
-        let output_len = output.len() / usize::from(protocol::CHANNELS);
+        let input_len = input.len() / usize::from(bark_protocol::CHANNELS);
+        let output_len = output.len() / usize::from(bark_protocol::CHANNELS);
 
         // usize could technically be 64 bit, speex only takes u32 sizes,
         // we don't want to panic or truncate, so let's just pick a reasonable

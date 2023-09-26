@@ -4,19 +4,19 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytemuck::Zeroable;
-use cpal::{SampleRate, OutputCallbackInfo};
+use cpal::OutputCallbackInfo;
 use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use crate::protocol::{self, Protocol};
-use crate::protocol::packet::{Audio, Time, PacketKind, StatsReply};
-use crate::protocol::types::{TimestampMicros, SessionId, ReceiverId, TimePhase};
+use bark_protocol::SampleRate;
+use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
+use bark_protocol::types::{SessionId, ReceiverId, TimePhase};
+use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
+use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
+
 use crate::resample::Resampler;
-use crate::socket::{Socket, SocketOpt};
-use crate::stats::node::NodeStats;
-use crate::stats::receiver::{ReceiverStats, StreamStatus};
-use crate::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
-use crate::util;
+use crate::socket::{ProtocolSocket, Socket, SocketOpt};
+use crate::{util, time, stats};
 use crate::RunError;
 
 pub struct Receiver {
@@ -37,7 +37,7 @@ impl QueueEntry {
     pub fn as_full_buffer(&self) -> &[f32] {
         self.packet.as_ref()
             .map(|packet| packet.buffer())
-            .unwrap_or(&[0f32; protocol::SAMPLES_PER_PACKET])
+            .unwrap_or(&[0f32; bark_protocol::SAMPLES_PER_PACKET])
     }
 }
 
@@ -181,7 +181,7 @@ impl Receiver {
     }
 
     pub fn receive_audio(&mut self, packet: Audio) {
-        let now = TimestampMicros::now();
+        let now = time::now();
 
         if !self.prepare_stream(&packet) {
             return;
@@ -391,7 +391,7 @@ impl RateAdjust {
     }
 
     pub fn sample_rate(&mut self, timing: Timing) -> SampleRate {
-        self.adjusted_rate(timing).unwrap_or(protocol::SAMPLE_RATE)
+        self.adjusted_rate(timing).unwrap_or(bark_protocol::SAMPLE_RATE)
     }
 
     fn adjusted_rate(&mut self, timing: Timing) -> Option<SampleRate> {
@@ -416,7 +416,7 @@ impl RateAdjust {
         }
 
         let slew_duration_duration = i64::try_from(slew_target_duration.as_micros()).unwrap();
-        let base_sample_rate = i64::from(protocol::SAMPLE_RATE.0);
+        let base_sample_rate = i64::from(bark_protocol::SAMPLE_RATE);
         let rate_offset = frame_offset.as_frames() * 1_000_000 / slew_duration_duration;
         let rate = base_sample_rate + rate_offset;
 
@@ -474,8 +474,8 @@ pub struct ReceiveOpt {
 }
 
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
-    let receiver_id = ReceiverId::generate();
-    let node = NodeStats::get();
+    let receiver_id = generate_receiver_id();
+    let node = stats::node::get();
 
     if let Some(device) = &opt.device {
         crate::audio::set_sink_env(device);
@@ -515,7 +515,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
                 let output_latency = SampleDuration::from_std_duration_lossy(output_latency);
 
-                let now = Timestamp::now();
+                let now = Timestamp::from_micros_lossy(time::now());
                 let pts = now.add(output_latency);
 
                 let mut state = state.lock().unwrap();
@@ -531,7 +531,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
-    let protocol = Protocol::new(socket);
+    let protocol = ProtocolSocket::new(socket);
 
     crate::thread::set_name("bark/network");
     crate::thread::set_realtime_priority();
@@ -550,7 +550,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 match time.data().phase() {
                     Some(TimePhase::Broadcast) => {
                         let data = time.data_mut();
-                        data.receive_2 = TimestampMicros::now();
+                        data.receive_2 = time::now();
                         data.rid = receiver_id;
 
                         protocol.send_to(time.as_packet(), peer)
@@ -576,7 +576,9 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 let receiver = *state.recv.stats();
                 drop(state);
 
-                let reply = StatsReply::receiver(sid, receiver, node);
+                let reply = StatsReply::receiver(sid, receiver, node)
+                    .expect("allocate StatsReply packet");
+
                 let _ = protocol.send_to(reply.as_packet(), peer);
             }
             Some(PacketKind::StatsReply(_)) => {
@@ -587,4 +589,8 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
             }
         }
     }
+}
+
+pub fn generate_receiver_id() -> ReceiverId {
+    ReceiverId(rand::random())
 }

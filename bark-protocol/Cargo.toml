@@ -1,0 +1,15 @@
+[package]
+name = "bark-protocol"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+
+[dependencies]
+bitflags = { workspace = true }
+bytemuck = { workspace = true }
+derive_more = { workspace = true }
+
+[target.'cfg(target_os="espidf")'.dependencies]
+esp-pbuf = "0.2"

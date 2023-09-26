@@ -1,69 +1,31 @@
-use std::mem::size_of;
+use core::cmp;
+use core::mem::size_of;
+use core::ops::Range;
 
 use bytemuck::Zeroable;
-pub use cpal::{SampleFormat, SampleRate, ChannelCount};
 
-use crate::stats::node::NodeStats;
-use crate::stats::receiver::ReceiverStats;
+use crate::buffer::{AllocError, PacketBuffer};
+use crate::types::stats::node::NodeStats;
+use crate::types::stats::receiver::ReceiverStats;
+use crate::types::{self, AudioPacketHeader, Magic, SessionId, StatsReplyFlags};
 use crate::time::SampleDuration;
-use crate::protocol::types::{self, Magic};
-
-use super::types::{AudioPacketHeader, StatsReplyFlags, SessionId};
 
 pub const MAX_PACKET_SIZE: usize =
     size_of::<types::PacketHeader>() +
     size_of::<types::AudioPacketHeader>() +
     size_of::<types::AudioPacketBuffer>();
 
-pub struct PacketBuffer {
-    raw: Box<[u8]>,
-    len: usize,
-}
-
-impl std::fmt::Debug for PacketBuffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PacketBuffer {{ len = {}; {:x?} }}", self.len, &self.raw[0..self.len])
-    }
-}
-
-impl PacketBuffer {
-    pub fn allocate() -> Self {
-        PacketBuffer {
-            raw: bytemuck::allocation::zeroed_slice_box(MAX_PACKET_SIZE),
-            len: 0,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn set_len(&mut self, len: usize) {
-        self.len = len;
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.raw[0..self.len]
-    }
-
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut self.raw[0..self.len]
-    }
-
-    pub fn as_full_buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.raw
-    }
-}
-
 #[derive(Debug)]
 pub struct Packet(PacketBuffer);
 
 impl Packet {
-    fn allocate(magic: Magic, len: usize) -> Self {
-        let mut packet = Packet(PacketBuffer::allocate());
-        packet.set_len(len);
+    fn allocate(magic: Magic, len: usize) -> Result<Self, AllocError> {
+        let header_size = size_of::<types::PacketHeader>();
+        let packet_len = header_size + len;
+
+        let mut packet = Packet(PacketBuffer::allocate(packet_len)?);
         packet.header_mut().magic = magic;
-        return packet;
+        Ok(packet)
     }
 
     pub fn from_buffer(buffer: PacketBuffer) -> Option<Packet> {
@@ -106,11 +68,6 @@ impl Packet {
         self.0.len() - header_size
     }
 
-    pub fn set_len(&mut self, len: usize) {
-        let header_size = size_of::<types::PacketHeader>();
-        self.0.set_len(header_size + len);
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         let header_size = size_of::<types::PacketHeader>();
         &self.0.as_bytes()[header_size..]
@@ -138,13 +95,13 @@ impl Audio {
         size_of::<types::AudioPacketHeader>() +
         size_of::<types::AudioPacketBuffer>();
 
-    pub fn write() -> AudioWriter {
-        let packet = Packet::allocate(Magic::AUDIO, Self::LENGTH);
+    pub fn write() -> Result<AudioWriter, AllocError> {
+        let packet = Packet::allocate(Magic::AUDIO, Self::LENGTH)?;
 
-        AudioWriter {
+        Ok(AudioWriter {
             packet: Audio(packet),
             written: SampleDuration::zero(),
-        }
+        })
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
@@ -214,7 +171,7 @@ impl AudioWriter {
 
     pub fn write(&mut self, audio: &[f32]) -> SampleDuration {
         let input_duration = SampleDuration::from_buffer_offset(audio.len());
-        let copy_duration = std::cmp::min(input_duration, self.remaining());
+        let copy_duration = cmp::min(input_duration, self.remaining());
 
         let copy_len = copy_duration.as_buffer_offset();
         let source_buffer = &audio[0..copy_len];
@@ -248,11 +205,11 @@ impl Time {
 
     // time packets are padded so that they are
     // the same length as audio packets:
-    const DATA_RANGE: std::ops::Range<usize> =
+    const DATA_RANGE: Range<usize> =
         0..size_of::<types::TimePacket>();
 
-    pub fn allocate() -> Self {
-        Time(Packet::allocate(Magic::TIME, Self::LENGTH))
+    pub fn allocate() -> Result<Self, AllocError> {
+        Ok(Time(Packet::allocate(Magic::TIME, Self::LENGTH)?))
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
@@ -286,8 +243,8 @@ impl Time {
 pub struct StatsRequest(Packet);
 
 impl StatsRequest {
-    pub fn new() -> Self {
-        StatsRequest(Packet::allocate(Magic::STATS_REQ, 0))
+    pub fn new() -> Result<Self, AllocError> {
+        Ok(StatsRequest(Packet::allocate(Magic::STATS_REQ, 0)?))
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
@@ -313,17 +270,17 @@ pub struct StatsReply(Packet);
 impl StatsReply {
     const LENGTH: usize = size_of::<types::StatsReplyPacket>();
 
-    fn new(flags: StatsReplyFlags, data: types::StatsReplyPacket) -> Self {
-        let mut packet = Packet::allocate(Magic::STATS_REPLY, Self::LENGTH);
+    fn new(flags: StatsReplyFlags, data: types::StatsReplyPacket) -> Result<Self, AllocError> {
+        let mut packet = Packet::allocate(Magic::STATS_REPLY, Self::LENGTH)?;
         packet.header_mut().flags = bytemuck::cast(flags);
 
         let mut reply = StatsReply(packet);
         *reply.data_mut() = data;
 
-        reply
+        Ok(reply)
     }
 
-    pub fn source(sid: SessionId, node: NodeStats) -> Self {
+    pub fn source(sid: SessionId, node: NodeStats) -> Result<Self, AllocError> {
         let receiver = ReceiverStats::zeroed();
 
         Self::new(
@@ -332,7 +289,7 @@ impl StatsReply {
         )
     }
 
-    pub fn receiver(sid: SessionId, receiver: ReceiverStats, node: NodeStats) -> Self {
+    pub fn receiver(sid: SessionId, receiver: ReceiverStats, node: NodeStats) -> Result<Self, AllocError> {
         Self::new(
             StatsReplyFlags::IS_RECEIVER,
             types::StatsReplyPacket { sid, receiver, node },

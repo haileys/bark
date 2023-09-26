@@ -7,6 +7,9 @@ use nix::poll::{PollFd, PollFlags};
 use socket2::{Domain, Type};
 use structopt::StructOpt;
 
+use bark_protocol::buffer::PacketBuffer;
+use bark_protocol::packet::Packet;
+
 // expedited forwarding - IP header field indicating that switches should
 // prioritise our packets for minimal delay
 const IPTOS_DSCP_EF: u32 = 0xb8;
@@ -114,4 +117,46 @@ fn bind_socket(bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
     socket.bind(&bind.into()).map_err(|e| ListenError::Bind(bind, e))?;
 
     Ok(socket)
+}
+
+pub struct ProtocolSocket {
+    socket: Socket,
+}
+
+impl ProtocolSocket {
+    pub fn new(socket: Socket) -> Self {
+        ProtocolSocket { socket }
+    }
+
+    pub fn broadcast(&self, packet: &Packet) -> Result<(), io::Error> {
+        self.socket.broadcast(packet.as_buffer().as_bytes())
+    }
+
+    pub fn send_to(&self, packet: &Packet, peer: PeerId) -> Result<(), io::Error> {
+        self.socket.send_to(packet.as_buffer().as_bytes(), peer)
+    }
+
+    fn recv_buffer_from(&self) -> Result<(PacketBuffer, PeerId), io::Error> {
+        let mut buffer = vec![0u8; bark_protocol::packet::MAX_PACKET_SIZE];
+
+        let (nbytes, peer) = self.socket.recv_from(&mut buffer)?;
+
+        // shrink vec to what we just read:
+        assert!(nbytes < buffer.len());
+        buffer.resize(nbytes, 0);
+
+        let buffer = PacketBuffer::from_raw(buffer);
+
+        Ok((buffer, peer))
+    }
+
+    pub fn recv_from(&self) -> Result<(Packet, PeerId), io::Error> {
+        loop {
+            let (buffer, peer) = self.recv_buffer_from()?;
+
+            if let Some(packet) = Packet::from_buffer(buffer) {
+                return Ok((packet, peer));
+            }
+        }
+    }
 }
