@@ -13,11 +13,11 @@ use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta}
 use bark_protocol::types::{SessionId, ReceiverId, TimePhase};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
+use bark_network::{ProtocolSocket, Socket};
 
 use crate::resample::Resampler;
-use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{util, time, stats};
-use crate::RunError;
+use crate::{RunError, SocketOpt};
 
 pub struct Receiver {
     opt: ReceiveOpt,
@@ -528,7 +528,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
-    let socket = Socket::open(opt.socket)
+    let socket = Socket::open(opt.socket.multicast)
         .map_err(RunError::Listen)?;
 
     let protocol = ProtocolSocket::new(socket);

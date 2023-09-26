@@ -1,0 +1,10 @@
+[package]
+name = "bark-network"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+bark-protocol = { workspace = true }
+derive_more = { workspace = true }
+nix = { workspace = true }
+socket2 = "0.5.4"

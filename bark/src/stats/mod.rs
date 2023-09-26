@@ -9,11 +9,11 @@ use std::io::Write;
 use structopt::StructOpt;
 use termcolor::BufferedStandardStream;
 
+use bark_network::{Socket, PeerId, ProtocolSocket};
 use bark_protocol::packet::{StatsRequest, StatsReply, PacketKind};
 use bark_protocol::types::StatsReplyFlags;
 
-use crate::socket::{Socket, SocketOpt, PeerId, ProtocolSocket};
-use crate::RunError;
+use crate::{RunError, SocketOpt};
 
 use self::render::Padding;
 
@@ -24,7 +24,7 @@ pub struct StatsOpt {
 }
 
 pub fn run(opt: StatsOpt) -> Result<(), RunError> {
-    let socket = Socket::open(opt.socket)
+    let socket = Socket::open(opt.socket.multicast)
         .map_err(RunError::Listen)?;
 
     let protocol = Arc::new(ProtocolSocket::new(socket));

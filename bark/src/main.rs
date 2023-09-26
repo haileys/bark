@@ -2,7 +2,6 @@ mod audio;
 mod config;
 mod receive;
 mod resample;
-mod socket;
 mod stats;
 mod stream;
 mod thread;
@@ -20,9 +19,16 @@ enum Opt {
     Stats(stats::StatsOpt),
 }
 
+#[derive(StructOpt, Debug, Clone)]
+struct SocketOpt {
+    #[structopt(long, name="addr", env = "BARK_MULTICAST")]
+    /// Multicast group address including port, eg. 224.100.100.100:1530
+    pub multicast: std::net::SocketAddrV4,
+}
+
 #[derive(Debug)]
 pub enum RunError {
-    Listen(socket::ListenError),
+    Listen(bark_network::ListenError),
     NoDeviceAvailable,
     NoSupportedStreamConfig,
     StreamConfigs(cpal::SupportedStreamConfigsError),

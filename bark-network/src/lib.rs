@@ -5,7 +5,6 @@ use std::os::fd::AsRawFd;
 use derive_more::Display;
 use nix::poll::{PollFd, PollFlags};
 use socket2::{Domain, Type};
-use structopt::StructOpt;
 
 use bark_protocol::buffer::PacketBuffer;
 use bark_protocol::packet::Packet;
@@ -23,13 +22,6 @@ pub enum ListenError {
     JoinMulticastGroup(Ipv4Addr, io::Error),
 }
 
-#[derive(StructOpt, Debug, Clone)]
-pub struct SocketOpt {
-    #[structopt(long, name="addr", env = "BARK_MULTICAST")]
-    /// Multicast group address including port, eg. 224.100.100.100:1530
-    pub multicast: SocketAddrV4,
-}
-
 pub struct Socket {
     multicast: SocketAddrV4,
 
@@ -45,9 +37,9 @@ pub struct Socket {
 pub struct PeerId(SocketAddr);
 
 impl Socket {
-    pub fn open(opt: SocketOpt) -> Result<Socket, ListenError> {
-        let group = *opt.multicast.ip();
-        let port = opt.multicast.port();
+    pub fn open(multicast: SocketAddrV4) -> Result<Socket, ListenError> {
+        let group = *multicast.ip();
+        let port = multicast.port();
 
         let tx = open_multicast(group, SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
         let rx = open_multicast(group, SocketAddrV4::new(group, port))?;

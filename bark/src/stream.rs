@@ -5,13 +5,13 @@ use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
+use bark_network::{Socket, ProtocolSocket};
 use bark_protocol::time::{SampleDuration, Timestamp};
 use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
 use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
 
-use crate::socket::{Socket, SocketOpt, ProtocolSocket};
 use crate::{util, stats, time};
-use crate::RunError;
+use crate::{RunError, SocketOpt};
 
 #[derive(StructOpt)]
 pub struct StreamOpt {
@@ -44,7 +44,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     let config = util::config_for_device(&device)?;
 
-    let socket = Socket::open(opt.socket)
+    let socket = Socket::open(opt.socket.multicast)
         .map_err(RunError::Listen)?;
 
     let protocol = Arc::new(ProtocolSocket::new(socket));

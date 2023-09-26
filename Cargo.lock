@@ -113,6 +113,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 name = "bark"
 version = "0.1.0"
 dependencies = [
+ "bark-network",
  "bark-protocol",
  "bitflags 2.4.0",
  "bytemuck",
@@ -130,6 +131,16 @@ dependencies = [
  "termcolor",
  "toml",
  "xdg",
+]
+
+[[package]]
+name = "bark-network"
+version = "0.0.0"
+dependencies = [
+ "bark-protocol",
+ "derive_more",
+ "nix 0.26.2",
+ "socket2",
 ]
 
 [[package]]
@@ -1340,9 +1351,9 @@ checksum = "62bb4feee49fdd9f707ef802e22365a35de4b7b299de4763d44bfea899442ff9"
 
 [[package]]
 name = "socket2"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2538b18701741680e0322a2302176d3253a35388e2e62f172f64f4f16605f877"
+checksum = "4031e820eb552adee9295814c0ced9e5cf38ddf1e8b7d566d6de8e2538ea989e"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",

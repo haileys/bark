@@ -1,11 +1,11 @@
 use termcolor::{WriteColor, ColorSpec, Color};
 
+use bark_network::PeerId;
 use bark_protocol::packet::StatsReply;
 use bark_protocol::types::{StatsReplyPacket, StatsReplyFlags};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::types::stats::node::NodeStats;
 
-use crate::socket::PeerId;
 use super::node;
 
 #[derive(Default)]
