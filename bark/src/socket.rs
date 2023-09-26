@@ -142,7 +142,7 @@ impl ProtocolSocket {
         let (nbytes, peer) = self.socket.recv_from(&mut buffer)?;
 
         // shrink vec to what we just read:
-        assert!(nbytes < buffer.len());
+        assert!(nbytes <= buffer.len());
         buffer.resize(nbytes, 0);
 
         let buffer = PacketBuffer::from_raw(buffer);
