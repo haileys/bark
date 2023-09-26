@@ -141,6 +141,8 @@ dependencies = [
  "bark-protocol",
  "cpal",
  "derive_more",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

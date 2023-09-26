@@ -1,4 +1,3 @@
-mod audio;
 mod config;
 mod receive;
 mod resample;

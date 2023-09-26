@@ -1,8 +1,14 @@
+//! This is a gross hack!! We use cpal for audio I/O, but it exposes no API
+//! to select specific sinks/sources, we can only select a general audio
+//! subsystem like PulseAudio or Pipewire. This utility allows us to select
+//! specific devices by setting certain influential environment variables.
+//! Longer term, we should remove cpal and instead use the sound APIs directly.
+
 use std::process::{Command, Stdio};
 
 use serde::Deserialize;
 
-pub fn set_sink_env(device: &str) {
+pub fn set_sink(device: &str) {
     let Some(index) = find_pulse_node(Kind::Sink, device) else {
         eprintln!("falling back to default audio sink");
         return;
@@ -14,7 +20,7 @@ pub fn set_sink_env(device: &str) {
     std::env::set_var("PIPEWIRE_NODE", index.0.to_string());
 }
 
-pub fn set_source_env(device: &str) {
+pub fn set_source(device: &str) {
     let Some(index) = find_pulse_node(Kind::Source, device) else {
         eprintln!("falling back to default audio source");
         return;
