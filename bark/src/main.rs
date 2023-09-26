@@ -6,7 +6,6 @@ mod stats;
 mod stream;
 mod thread;
 mod time;
-mod util;
 
 use std::process::ExitCode;
 
@@ -30,8 +29,7 @@ struct SocketOpt {
 pub enum RunError {
     Listen(bark_network::ListenError),
     NoDeviceAvailable,
-    NoSupportedStreamConfig,
-    StreamConfigs(cpal::SupportedStreamConfigsError),
+    ConfigureDevice(bark_device::util::ConfigError),
     BuildStream(cpal::BuildStreamError),
     Stream(cpal::PlayStreamError),
     Socket(std::io::Error),

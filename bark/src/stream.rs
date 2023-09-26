@@ -10,7 +10,7 @@ use bark_protocol::time::{SampleDuration, Timestamp};
 use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
 use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
 
-use crate::{util, stats, time};
+use crate::{stats, time};
 use crate::{RunError, SocketOpt};
 
 #[derive(StructOpt)]
@@ -42,7 +42,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let device = host.default_input_device()
         .ok_or(RunError::NoDeviceAvailable)?;
 
-    let config = util::config_for_device(&device)?;
+    let config = bark_device::util::config_for_device(&device)
+        .map_err(RunError::ConfigureDevice)?;
 
     let socket = Socket::open(opt.socket.multicast)
         .map_err(RunError::Listen)?;

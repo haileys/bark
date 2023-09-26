@@ -16,7 +16,7 @@ use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 use bark_network::{ProtocolSocket, Socket};
 
 use crate::resample::Resampler;
-use crate::{util, time, stats};
+use crate::{time, stats};
 use crate::{RunError, SocketOpt};
 
 pub struct Receiver {
@@ -486,7 +486,8 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let device = host.default_output_device()
         .ok_or(RunError::NoDeviceAvailable)?;
 
-    let config = util::config_for_device(&device)?;
+    let config = bark_device::util::config_for_device(&device)
+        .map_err(RunError::ConfigureDevice)?;
 
     struct SharedState {
         pub recv: Receiver,

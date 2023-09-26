@@ -2,15 +2,18 @@
 resolver = "2"
 members = [
     "bark",
+    "bark-device",
     "bark-network",
     "bark-protocol",
 ]
 
 [workspace.dependencies]
+bark-device = { path = "bark-device" }
 bark-network = { path = "bark-network" }
 bark-protocol = { path = "bark-protocol" }
 
 bitflags = { version = "2.4.0", features = ["bytemuck"] }
 bytemuck = { version = "1.13", features = ["derive"] }
+cpal = "0.15"
 derive_more = { version = "0.99" }
 nix = { version = "0.26.2", features = ["time", "socket", "net", "poll", "user", "hostname"], default-features = false }

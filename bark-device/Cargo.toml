@@ -1,0 +1,10 @@
+[package]
+name = "bark-device"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+bark-protocol = { workspace = true }
+
+cpal = { workspace = true }
+derive_more = { workspace = true }
