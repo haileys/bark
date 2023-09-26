@@ -10,7 +10,7 @@ pub enum ConfigError {
     NoSupportedStreamConfig,
 }
 
-pub fn config_for_device(device: &cpal::Device) -> Result<StreamConfig, ConfigError> {
+pub fn for_device(device: &cpal::Device) -> Result<StreamConfig, ConfigError> {
     let configs = device.supported_input_configs()?;
 
     let config = configs

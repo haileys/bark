@@ -15,7 +15,8 @@ bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 cpal = { workspace = true }
 derive_more = { workspace = true }
-nix = { version = "0.26.2", features = ["time", "socket", "net", "poll", "user", "hostname"], default-features = false }
+nix = { workspace = true }
+
 opus = "0.3.0"
 rand = "0.8.5"
 serde = { version = "1.0.183", features = ["derive"] }

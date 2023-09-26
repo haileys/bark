@@ -16,7 +16,7 @@ use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 use bark_network::{ProtocolSocket, Socket};
 
 use crate::resample::Resampler;
-use crate::{time, stats};
+use crate::stats;
 use crate::{RunError, SocketOpt};
 
 pub struct Receiver {
@@ -181,7 +181,7 @@ impl Receiver {
     }
 
     pub fn receive_audio(&mut self, packet: Audio) {
-        let now = time::now();
+        let now = bark_util::time::now();
 
         if !self.prepare_stream(&packet) {
             return;
@@ -486,7 +486,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let device = host.default_output_device()
         .ok_or(RunError::NoDeviceAvailable)?;
 
-    let config = bark_device::util::config_for_device(&device)
+    let config = bark_device::config::for_device(&device)
         .map_err(RunError::ConfigureDevice)?;
 
     struct SharedState {
@@ -516,7 +516,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
                 let output_latency = SampleDuration::from_std_duration_lossy(output_latency);
 
-                let now = Timestamp::from_micros_lossy(time::now());
+                let now = Timestamp::from_micros_lossy(bark_util::time::now());
                 let pts = now.add(output_latency);
 
                 let mut state = state.lock().unwrap();
@@ -551,7 +551,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 match time.data().phase() {
                     Some(TimePhase::Broadcast) => {
                         let data = time.data_mut();
-                        data.receive_2 = time::now();
+                        data.receive_2 = bark_util::time::now();
                         data.rid = receiver_id;
 
                         protocol.send_to(time.as_packet(), peer)
