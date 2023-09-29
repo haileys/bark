@@ -58,12 +58,15 @@ impl<R: Receiver, S: AudioSink> Decode<R, S> {
                 match self.resampler.process_floats(input, &mut buffer) {
                     Ok(result) => {
                         // write resampled output:
-                        let output = &buffer[0..result.output_written.as_buffer_offset()];
+                        let frames_written = result.output_written.to_frame_count();
+                        let frames_written = usize::try_from(frames_written).unwrap();
+                        let output = &buffer[0..frames_written];
                         let expected = self.sink.write(&output).await;
 
                         // send timing information to rate adjuster and
                         // update resampler sample rate:
                         let timing = Timing { play: pts, real: expected };
+                        log::trace!("timing: stream_pts={pts:?}, real_pts={expected:?}");
                         let rate = self.adjust.sample_rate(timing);
                         if let Err(e) = self.resampler.set_input_rate(rate) {
                             log::error!("error adjusting resampler input rate: {e:?}");
