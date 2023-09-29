@@ -37,7 +37,7 @@ struct Shared {
 }
 
 pub fn open(buffer_latency: SampleDuration) -> Result<Sink, OpenError> {
-    let ringbuf = RingBuffer::new(buffer_latency.as_buffer_offset());
+    let ringbuf = RingBuffer::new(buffer_latency.as_frame_buffer_offset());
     let (producer, consumer) = ringbuf.split();
 
     let shared = Arc::new(Shared {
@@ -160,14 +160,17 @@ impl Sink {
         let buffer_latency = SampleDuration::from_frame_count(u64::try_from(buffered).unwrap());
         let device_latency = self.shared.latency.load();
         let latency = buffer_latency + device_latency;
+        log::trace!("latency={}usec", latency.to_std_duration_lossy().as_micros());
         let pts = now + latency;
 
         let n = self.buffer.push_slice(data);
 
         if n == 0 && data.len() > 0 {
             self.shared.notify.register(cx.waker());
+            log::trace!("pending");
             Poll::Pending
         } else {
+            log::trace!("wrote {n}");
             Poll::Ready((pts, n))
         }
     }

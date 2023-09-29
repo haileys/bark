@@ -94,6 +94,10 @@ impl SampleDuration {
         usize::try_from(offset).unwrap()
     }
 
+    pub fn as_frame_buffer_offset(&self) -> usize {
+        usize::try_from(self.0).unwrap()
+    }
+
     pub fn from_buffer_offset(offset: usize) -> Self {
         let channels = usize::from(CHANNELS);
         assert!(offset % channels == 0);

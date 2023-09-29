@@ -23,7 +23,7 @@ pub struct ReceiveOpt {
     pub socket: SocketOpt,
     #[structopt(long, env = "BARK_RECEIVE_DEVICE")]
     pub device: Option<String>,
-    #[structopt(long, default_value="10")]
+    #[structopt(long, default_value="2")]
     pub buffer_latency_ms: u64,
 }
 
