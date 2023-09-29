@@ -87,7 +87,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                         // we should only ever receive an audio packet if another
                         // stream is present. check if it should take over
                         if audio.header().sid > sid {
-                            eprintln!("Peer {peer} has taken over stream, exiting");
+                            log::warn!("Peer {peer} has taken over stream, exiting");
                             break;
                         }
                     }

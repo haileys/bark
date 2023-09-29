@@ -10,11 +10,11 @@ use serde::Deserialize;
 
 pub fn set_sink(device: &str) {
     let Some(index) = find_pulse_node(Kind::Sink, device) else {
-        eprintln!("falling back to default audio sink");
+        log::info!("using default audio sink");
         return;
     };
 
-    println!("using audio sink at index {}: {}", index.0, device);
+    log::info!("using audio sink at index {}: {}", index.0, device);
 
     std::env::set_var("PULSE_SINK", device);
     std::env::set_var("PIPEWIRE_NODE", index.0.to_string());
@@ -22,11 +22,11 @@ pub fn set_sink(device: &str) {
 
 pub fn set_source(device: &str) {
     let Some(index) = find_pulse_node(Kind::Source, device) else {
-        eprintln!("falling back to default audio source");
+        log::info!("using default audio source");
         return;
     };
 
-    println!("using audio source at index {}: {}", index.0, device);
+    log::info!("using audio source at index {}: {}", index.0, device);
 
     std::env::set_var("PULSE_SOURCE", device);
     std::env::set_var("PIPEWIRE_NODE", index.0.to_string());
@@ -60,7 +60,7 @@ fn find_pulse_node(kind: Kind, name: &str) -> Option<NodeIndex> {
     let output = match result {
         Ok(output) => output,
         Err(e) => {
-            eprintln!("error running pactl to find audio device: {e:?}");
+            log::warn!("error running pactl to find audio device: {e:?}");
             return None;
         }
     };
@@ -68,7 +68,7 @@ fn find_pulse_node(kind: Kind, name: &str) -> Option<NodeIndex> {
     let text = match std::str::from_utf8(&output.stdout) {
         Ok(text) => text,
         Err(e) => {
-            eprintln!("could not parse pactl output: {e:?}");
+            log::warn!("could not parse pactl output: {e:?}");
             return None;
         }
     };
@@ -76,7 +76,7 @@ fn find_pulse_node(kind: Kind, name: &str) -> Option<NodeIndex> {
     let nodes = match serde_json::from_str::<Vec<Node>>(text) {
         Ok(nodes) => nodes,
         Err(e) => {
-            eprintln!("could not parse pactl output: {e:?}");
+            log::warn!("could not parse pactl output: {e:?}");
             return None;
         }
     };

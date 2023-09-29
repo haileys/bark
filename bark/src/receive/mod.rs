@@ -118,6 +118,7 @@ impl ReceiverRef {
 }
 
 pub struct Receiver {
+    #[allow(unused)]
     id: ReceiverId,
     stream: Option<Stream>,
 }

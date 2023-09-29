@@ -7,4 +7,5 @@ edition = "2021"
 bark-protocol = { workspace = true }
 derive_more = { workspace = true }
 nix = { workspace = true }
+log = { workspace = true }
 socket2 = "0.5.4"

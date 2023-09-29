@@ -103,7 +103,7 @@ fn bind_socket(bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
     socket.set_reuse_address(true).map_err(ListenError::SetReuseAddr)?;
 
     if let Err(e) = socket.set_tos(IPTOS_DSCP_EF) {
-        eprintln!("warning: failed to set IPTOS_DSCP_EF: {e:?}");
+        log::warn!("failed to set IPTOS_DSCP_EF: {e:?}");
     }
 
     socket.bind(&bind.into()).map_err(|e| ListenError::Bind(bind, e))?;

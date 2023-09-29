@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 bark-protocol = { workspace = true }
 nix = { workspace = true }
+log = { workspace = true}
 libc = "0.2"

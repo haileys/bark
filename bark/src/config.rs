@@ -40,12 +40,15 @@ pub fn load_into_env(config: &Config) {
 fn load_file(path: &Path) -> Option<Config> {
     let contents = std::fs::read_to_string(path).ok()?;
 
-    eprintln!("reading config from {}", path.display());
+    log::debug!("trying to read config from {}", path.display());
 
     match toml::from_str(&contents) {
-        Ok(config) => config,
+        Ok(config) => {
+            log::info!("read config from {}", path.display());
+            config
+        }
         Err(e) => {
-            eprintln!("error reading config: {}", e);
+            log::error!("error reading config from {}: {e:?}", path.display());
             std::process::exit(1);
         }
     }
