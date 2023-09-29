@@ -3,12 +3,13 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use bark_protocol::types::stats::node::NodeStats;
 use bytemuck::Zeroable;
 use cpal::OutputCallbackInfo;
 use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use bark_protocol::SampleRate;
+use bark_protocol::{SampleRate, buffer};
 use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use bark_protocol::types::{SessionId, ReceiverId, TimePhase};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
@@ -18,6 +19,10 @@ use bark_network::{ProtocolSocket, Socket};
 use crate::resample::Resampler;
 use crate::stats;
 use crate::{RunError, SocketOpt};
+
+mod consts;
+mod queue;
+mod stream;
 
 pub struct Receiver {
     opt: ReceiveOpt,
@@ -369,134 +374,20 @@ impl Receiver {
     }
 }
 
-struct RateAdjust {
-    slew: bool,
-}
-
-#[derive(Copy, Clone)]
-pub struct Timing {
-    pub real: Timestamp,
-    pub play: Timestamp,
-}
-
-impl RateAdjust {
-    pub fn new() -> Self {
-        RateAdjust {
-            slew: false
-        }
-    }
-
-    pub fn slew(&self) -> bool {
-        self.slew
-    }
-
-    pub fn sample_rate(&mut self, timing: Timing) -> SampleRate {
-        self.adjusted_rate(timing).unwrap_or(bark_protocol::SAMPLE_RATE)
-    }
-
-    fn adjusted_rate(&mut self, timing: Timing) -> Option<SampleRate> {
-        // parameters, maybe these could be cli args?
-        let start_slew_threshold = Duration::from_micros(2000);
-        let stop_slew_threshold = Duration::from_micros(100);
-        let slew_target_duration = Duration::from_millis(500);
-
-        // turn them into native units
-        let start_slew_threshold = SampleDuration::from_std_duration_lossy(start_slew_threshold);
-        let stop_slew_threshold = SampleDuration::from_std_duration_lossy(stop_slew_threshold);
-
-        let frame_offset = timing.real.delta(timing.play);
-
-        if frame_offset.abs() < stop_slew_threshold {
-            self.slew = false;
-            return None;
-        }
-
-        if frame_offset.abs() < start_slew_threshold && !self.slew {
-            return None;
-        }
-
-        let slew_duration_duration = i64::try_from(slew_target_duration.as_micros()).unwrap();
-        let base_sample_rate = i64::from(bark_protocol::SAMPLE_RATE);
-        let rate_offset = frame_offset.as_frames() * 1_000_000 / slew_duration_duration;
-        let rate = base_sample_rate + rate_offset;
-
-        // clamp any potential slow down to 2%, we shouldn't ever get too far
-        // ahead of the stream
-        let rate = std::cmp::max(base_sample_rate * 98 / 100, rate);
-
-        // let the speed up run much higher, but keep it reasonable still
-        let rate = std::cmp::min(base_sample_rate * 2, rate);
-
-        self.slew = true;
-        Some(SampleRate(u32::try_from(rate).unwrap()))
-    }
-}
-
-struct Aggregate<T> {
-    samples: [T; 64],
-    count: usize,
-    index: usize,
-}
-
-impl<T: Copy + Default + Ord> Aggregate<T> {
-    pub fn new() -> Self {
-        let samples = array::from_fn(|_| Default::default());
-        Aggregate { samples, count: 0, index: 0 }
-    }
-
-    pub fn observe(&mut self, value: T) {
-        self.samples[self.index] = value;
-
-        if self.count < self.samples.len() {
-            self.count += 1;
-        }
-
-        self.index += 1;
-        self.index %= self.samples.len();
-    }
-
-    pub fn median(&self) -> Option<T> {
-        let mut samples = self.samples;
-        let samples = &mut samples[0..self.count];
-        samples.sort();
-        samples.get(self.count / 2).copied()
-    }
-}
-
-#[derive(StructOpt, Clone)]
-pub struct ReceiveOpt {
-    #[structopt(flatten)]
-    pub socket: SocketOpt,
-    #[structopt(long, env = "BARK_RECEIVE_DEVICE")]
-    pub device: Option<String>,
-    #[structopt(long, default_value="12")]
-    pub max_seq_gap: usize,
-}
-
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
-    let receiver_id = generate_receiver_id();
-    let node = stats::node::get();
 
-    if let Some(device) = &opt.device {
-        bark_device::env::set_sink(device);
-    }
 
-    let host = cpal::default_host();
+    let receiver = Arc::new(Mutex::new(Receiver::new(opt.clone())));
 
-    let device = host.default_output_device()
-        .ok_or(RunError::NoDeviceAvailable)?;
+    std::thread::spawn({
+        move || {
+            network_thread(protocol, receiver_id, receiver, node);
+        }
+    });
 
-    let config = bark_device::config::for_device(&device)
-        .map_err(RunError::ConfigureDevice)?;
+    // loop {
 
-    struct SharedState {
-        pub recv: Receiver,
-    }
-
-    let state = Arc::new(Mutex::new(SharedState {
-        recv: Receiver::new(opt.clone()),
-    }));
-
+    // }
     let _stream = device.build_output_stream(&config,
         {
             let state = state.clone();
@@ -529,11 +420,14 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         None
     ).map_err(RunError::BuildStream)?;
 
-    let socket = Socket::open(opt.socket.multicast)
-        .map_err(RunError::Listen)?;
+}
 
-    let protocol = ProtocolSocket::new(socket);
-
+fn network_thread(
+    protocol: ProtocolSocket,
+    receiver_id: ReceiverId,
+    receiver: Arc<Mutex<Receiver>>,
+    node: NodeStats,
+) {
     bark_util::thread::set_name("bark/network");
     bark_util::thread::set_realtime_priority();
 
@@ -558,8 +452,8 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                             .expect("reply to time packet");
                     }
                     Some(TimePhase::StreamReply) => {
-                        let mut state = state.lock().unwrap();
-                        state.recv.receive_time(time);
+                        let mut recv = receiver.lock().unwrap();
+                        recv.receive_time(time);
                     }
                     _ => {
                         // not for us - must be destined for another process
@@ -568,14 +462,14 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 }
             }
             Some(PacketKind::Audio(packet)) => {
-                let mut state = state.lock().unwrap();
-                state.recv.receive_audio(packet);
+                let mut recv = receiver.lock().unwrap();
+                recv.receive_audio(packet);
             }
             Some(PacketKind::StatsRequest(_)) => {
-                let state = state.lock().unwrap();
-                let sid = state.recv.current_session().unwrap_or(SessionId::zeroed());
-                let receiver = *state.recv.stats();
-                drop(state);
+                let recv = receiver.lock().unwrap();
+                let sid = recv.current_session().unwrap_or(SessionId::zeroed());
+                let receiver = *recv.stats();
+                drop(recv);
 
                 let reply = StatsReply::receiver(sid, receiver, node)
                     .expect("allocate StatsReply packet");
@@ -590,8 +484,4 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
             }
         }
     }
-}
-
-pub fn generate_receiver_id() -> ReceiverId {
-    ReceiverId(rand::random())
 }

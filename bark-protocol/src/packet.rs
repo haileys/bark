@@ -7,7 +7,7 @@ use bytemuck::Zeroable;
 use crate::buffer::{AllocError, PacketBuffer};
 use crate::types::stats::node::NodeStats;
 use crate::types::stats::receiver::ReceiverStats;
-use crate::types::{self, AudioPacketHeader, Magic, SessionId, StatsReplyFlags};
+use crate::types::{self, AudioPacketHeader, Magic, SessionId, StatsReplyFlags, AudioFrameF32};
 use crate::time::SampleDuration;
 
 pub const MAX_PACKET_SIZE: usize =
@@ -35,6 +35,10 @@ impl Packet {
         } else {
             Some(Packet(buffer))
         }
+    }
+
+    pub fn into_buffer(self) -> PacketBuffer {
+        self.0
     }
 
     pub fn as_buffer(&self) -> &PacketBuffer {
@@ -120,10 +124,13 @@ impl Audio {
         &self.0
     }
 
-    pub fn buffer(&self) -> &[f32] {
+    fn as_bytes(&self) -> &[u8] {
         let header_size = size_of::<types::AudioPacketHeader>();
-        let buffer_bytes = &self.0.as_bytes()[header_size..];
-        bytemuck::cast_slice(buffer_bytes)
+        &self.0.as_bytes()[header_size..]
+    }
+
+    pub fn buffer(&self) -> &[f32] {
+        bytemuck::cast_slice(self.as_bytes())
     }
 
     pub fn buffer_mut(&mut self) -> &mut [f32] {
@@ -143,6 +150,24 @@ impl Audio {
         let header_bytes = &mut self.0.as_bytes_mut()[0..header_size];
         bytemuck::from_bytes_mut(header_bytes)
     }
+
+    pub fn into_data(self) -> AudioData {
+        AudioData(self)
+    }
+}
+
+pub struct AudioData(Audio);
+
+impl AudioData {
+    fn bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
+    pub fn frames(&self) -> &[AudioFrameF32] {
+        // cast slice, panicking on failure
+        // Audio::parse guarantees that bytes is the correct length
+        bytemuck::cast_slice(self.bytes())
+    }
 }
 
 #[derive(Debug)]
@@ -157,7 +182,7 @@ impl AudioWriter {
     }
 
     pub fn remaining(&self) -> SampleDuration {
-        SampleDuration::ONE_PACKET.sub(self.length())
+        SampleDuration::ONE_PACKET - self.length()
     }
 
     fn remaining_buffer_mut(&mut self) -> &mut [f32] {
@@ -178,7 +203,7 @@ impl AudioWriter {
         let dest_buffer = &mut self.remaining_buffer_mut()[0..copy_len];
         dest_buffer.copy_from_slice(source_buffer);
 
-        self.written = self.written.add(copy_duration);
+        self.written = self.written + copy_duration;
 
         copy_duration
     }
@@ -224,6 +249,10 @@ impl Time {
         }
 
         Some(Time(packet))
+    }
+
+    pub fn into_packet(self) -> Packet {
+        self.0
     }
 
     pub fn as_packet(&self) -> &Packet {

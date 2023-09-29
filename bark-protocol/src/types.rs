@@ -140,3 +140,33 @@ impl ReceiverId {
 #[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct SessionId(pub i64);
+
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[repr(C)]
+pub struct AudioFrameF32(pub f32, pub f32);
+
+impl AudioFrameF32 {
+    pub fn zero() -> Self {
+        AudioFrameF32(0.0, 0.0)
+    }
+
+    pub fn from_interleaved_slice(interleaved: &[f32]) -> &[AudioFrameF32] {
+        // cast slice, panicking on failure
+        // this function works like an assertion
+        bytemuck::cast_slice(interleaved)
+    }
+
+    pub fn from_interleaved_slice_mut(interleaved: &mut [f32]) -> &mut [AudioFrameF32] {
+        // cast slice, panicking on failure
+        // this function works like an assertion
+        bytemuck::cast_slice_mut(interleaved)
+    }
+
+    pub fn as_interleaved_slice(slice: &[AudioFrameF32]) -> &[f32] {
+        bytemuck::must_cast_slice(slice)
+    }
+
+    pub fn as_interleaved_slice_mut(slice: &mut [AudioFrameF32]) -> &mut [f32] {
+        bytemuck::must_cast_slice_mut(slice)
+    }
+}

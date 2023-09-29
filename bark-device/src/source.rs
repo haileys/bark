@@ -1,11 +1,11 @@
 use std::sync::{Mutex, Condvar, Arc};
 
 use bark_protocol::types::TimestampMicros;
-use cpal::{traits::{HostTrait, DeviceTrait, StreamTrait}, InputCallbackInfo, Stream};
-use derive_more::From;
+use cpal::{InputCallbackInfo, Stream};
+use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use heapless::Deque;
 
-use crate::config::{self, ConfigError};
+use crate::{config, OpenError};
 
 const QUEUE_CAPACITY: usize = 4;
 
@@ -19,14 +19,6 @@ pub struct Source {
 pub struct AudioPacket {
     pub timestamp: TimestampMicros,
     pub data: Vec<f32>,
-}
-
-#[derive(Debug, From)]
-pub enum OpenError {
-    NoDeviceAvailable,
-    Configure(ConfigError),
-    BuildStream(cpal::BuildStreamError),
-    StartStream(cpal::PlayStreamError),
 }
 
 pub fn open() -> Result<Source, OpenError> {

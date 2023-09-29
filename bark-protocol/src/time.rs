@@ -1,3 +1,5 @@
+use core::ops::{Add, AddAssign, Sub};
+
 use crate::packet;
 use crate::types::TimestampMicros;
 use crate::{SAMPLE_RATE, FRAMES_PER_PACKET, CHANNELS};
@@ -23,10 +25,6 @@ impl Timestamp {
         Timestamp(ts)
     }
 
-    pub fn add(&self, duration: SampleDuration) -> Timestamp {
-        Timestamp(self.0.checked_add(duration.0).unwrap())
-    }
-
     pub fn duration_since(&self, other: Timestamp) -> SampleDuration {
         SampleDuration(self.0.checked_sub(other.0).unwrap())
     }
@@ -39,6 +37,20 @@ impl Timestamp {
 
     pub fn adjust(&self, delta: TimestampDelta) -> Timestamp {
         Timestamp(self.0.checked_add_signed(delta.0).unwrap())
+    }
+}
+
+impl Add<SampleDuration> for Timestamp {
+    type Output = Timestamp;
+
+    fn add(self, rhs: SampleDuration) -> Timestamp {
+        Timestamp(self.0.checked_add(rhs.0).unwrap())
+    }
+}
+
+impl AddAssign<SampleDuration> for Timestamp {
+    fn add_assign(&mut self, rhs: SampleDuration) {
+        *self = self.add(rhs);
     }
 }
 
@@ -55,6 +67,10 @@ impl SampleDuration {
 
     pub const fn from_frame_count(samples: u64) -> Self {
         SampleDuration(samples)
+    }
+
+    pub fn to_frame_count(self) -> u64 {
+        self.0
     }
 
     pub fn from_std_duration_lossy(duration: core::time::Duration) -> SampleDuration {
@@ -80,17 +96,26 @@ impl SampleDuration {
 
         SampleDuration(u64::try_from(offset / channels).unwrap())
     }
+}
 
-    pub fn add(&self, other: SampleDuration) -> Self {
-        SampleDuration(self.0.checked_add(other.0).unwrap())
+impl Add<SampleDuration> for SampleDuration {
+    type Output = SampleDuration;
+    fn add(self, rhs: SampleDuration) -> Self::Output {
+        SampleDuration(self.0.checked_add(rhs.0)
+            .expect("SampleDuration::add would overflow!"))
     }
+}
 
-    pub fn sub(&self, other: SampleDuration) -> Self {
-        SampleDuration(self.0.checked_sub(other.0).expect("SampleDuration::sub would underflow!"))
+impl Sub<SampleDuration> for SampleDuration {
+    type Output = SampleDuration;
+    fn sub(self, rhs: SampleDuration) -> Self::Output {
+        SampleDuration(self.0.checked_sub(rhs.0)
+            .expect("SampleDuration::sub would underflow!"))
     }
 }
 
 /// The difference between two machine clocks in microseconds
+/// A positive delta means the receiver's clock is ahead of the source's.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Default)]
 pub struct ClockDelta(i64);
 

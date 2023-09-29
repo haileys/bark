@@ -1,13 +1,14 @@
-use std::ffi::{c_void, c_int, CStr};
-use std::fmt::Debug;
-use std::ptr;
+use core::cmp;
+use core::ffi::{c_void, c_int, CStr};
+use core::fmt::{self, Debug};
+use core::ptr::NonNull;
 
+use bark_protocol::SampleRate;
+use bark_protocol::types::AudioFrameF32;
 use bark_protocol::time::SampleDuration;
 
-use self::ffi::speex_resampler_strerror;
-
 mod ffi {
-    use std::ffi::{c_void, c_int, c_char};
+    use core::ffi::{c_void, c_int, c_char};
 
     #[link(name = "speexdsp")]
     extern "C" {
@@ -53,7 +54,7 @@ pub struct ProcessResult {
 }
 
 impl Resampler {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, SpeexError> {
         let mut err: c_int = 0;
 
         let ptr = unsafe {
@@ -66,22 +67,22 @@ impl Resampler {
             )
         };
 
-        if ptr == ptr::null_mut() {
-            // this should only really fail on allocation error,
-            // which rust already makes a panic, so shrug let's
-            // just panic so callers don't have to deal with it
-            let err = SpeexError::from_err(err);
-            panic!("speex_resampler_init failed: {err:?}");
-        }
+        let ptr = NonNull::new(ptr)
+            .map(ResamplerPtr)
+            .ok_or_else(|| SpeexError::from_err(err))?;
 
-        Resampler { ptr: ResamplerPtr(ptr) }
+        Ok(Resampler { ptr })
     }
 
-    pub fn set_input_rate(&mut self, rate: u32) -> Result<(), SpeexError> {
+    fn as_ptr(&self) -> *mut c_void {
+        self.ptr.as_ptr()
+    }
+
+    pub fn set_input_rate(&mut self, rate: SampleRate) -> Result<(), SpeexError> {
         let err = unsafe {
             ffi::speex_resampler_set_rate(
-                self.ptr.0,
-                rate,
+                self.as_ptr(),
+                rate.0,
                 bark_protocol::SAMPLE_RATE.into(),
             )
         };
@@ -93,30 +94,31 @@ impl Resampler {
         Ok(())
     }
 
-    pub fn process_interleaved(&mut self, input: &[f32], output: &mut [f32])
+    pub fn process_floats(&mut self, input: &[AudioFrameF32], output: &mut [AudioFrameF32])
         -> Result<ProcessResult, SpeexError>
     {
-        // speex API takes frame count:
-        let input_len = input.len() / usize::from(bark_protocol::CHANNELS);
-        let output_len = output.len() / usize::from(bark_protocol::CHANNELS);
+        // speex API takes frame count, our input slices are already
+        // represented as whole frames:
+        let input_len = input.len();
+        let output_len = output.len();
 
         // usize could technically be 64 bit, speex only takes u32 sizes,
         // we don't want to panic or truncate, so let's just pick a reasonable
         // length and cap input and output since the API allows us to.
         // i'm going to say a reasonable length for a single call is 1<<20.
         let max_reasonable_len = 1 << 20;
-        let input_len = std::cmp::min(input_len, max_reasonable_len);
-        let output_len = std::cmp::min(output_len, max_reasonable_len);
+        let input_len = cmp::min(input_len, max_reasonable_len);
+        let output_len = cmp::min(output_len, max_reasonable_len);
 
         let mut input_len = u32::try_from(input_len).unwrap();
         let mut output_len = u32::try_from(output_len).unwrap();
 
         let err = unsafe {
             ffi::speex_resampler_process_interleaved_float(
-                self.ptr.0,
-                input.as_ptr(),
+                self.as_ptr(),
+                AudioFrameF32::as_interleaved_slice(input).as_ptr(),
                 &mut input_len,
-                output.as_mut_ptr(),
+                AudioFrameF32::as_interleaved_slice_mut(output).as_mut_ptr(),
                 &mut output_len,
             )
         };
@@ -133,12 +135,18 @@ impl Resampler {
 }
 
 #[repr(transparent)]
-struct ResamplerPtr(*mut c_void);
+struct ResamplerPtr(NonNull<c_void>);
+
+impl ResamplerPtr {
+    pub fn as_ptr(&self) -> *mut c_void {
+        self.0.as_ptr()
+    }
+}
 
 impl Drop for ResamplerPtr {
     fn drop(&mut self) {
         unsafe {
-            ffi::speex_resampler_destroy(self.0);
+            ffi::speex_resampler_destroy(self.0.as_ptr());
         }
     }
 }
@@ -148,15 +156,19 @@ pub struct SpeexError(&'static CStr);
 impl SpeexError {
     fn from_err(err: c_int) -> Self {
         let cstr = unsafe {
-            CStr::from_ptr(speex_resampler_strerror(err))
+            CStr::from_ptr(ffi::speex_resampler_strerror(err))
         };
 
         SpeexError(cstr)
     }
+
+    fn message(&self) -> &'static str {
+        self.0.to_str().unwrap_or_default()
+    }
 }
 
 impl Debug for SpeexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SpeexError({:?})", self.0.to_string_lossy())
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SpeexError({:?})", self.message())
     }
 }

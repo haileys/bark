@@ -1,6 +1,22 @@
 use std::ffi::CString;
 use std::io::ErrorKind;
 use std::sync::atomic::AtomicBool;
+use std::thread;
+
+pub fn start(name: &'static str, main: impl FnOnce() + Send + 'static) {
+    thread::spawn(|| {
+        set_name(name);
+        main();
+    });
+}
+
+pub fn start_realtime(name: &'static str, main: impl FnOnce() + Send + 'static) {
+    thread::spawn(|| {
+        set_name(name);
+        set_realtime_priority();
+        main();
+    });
+}
 
 pub fn set_name(name: &str) {
     let cstr = CString::new(name)

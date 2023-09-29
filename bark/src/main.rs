@@ -1,11 +1,11 @@
 mod config;
 mod receive;
-mod resample;
 mod stats;
 mod stream;
 
 use std::process::ExitCode;
 
+use derive_more::From;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -22,12 +22,12 @@ struct SocketOpt {
     pub multicast: std::net::SocketAddrV4,
 }
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum RunError {
     Listen(bark_network::ListenError),
     NoDeviceAvailable,
-    ConfigureDevice(bark_device::config::ConfigError),
-    OpenSource(bark_device::source::OpenError),
+    OpenDevice(bark_device::OpenError),
+    StartDecode(bark_core::decode::NewDecodeError),
     BuildStream(cpal::BuildStreamError),
     Stream(cpal::PlayStreamError),
     Socket(std::io::Error),

@@ -5,9 +5,10 @@ use std::os::fd::AsRawFd;
 use derive_more::Display;
 use nix::poll::{PollFd, PollFlags};
 use socket2::{Domain, Type};
+use structopt::StructOpt;
 
 use bark_protocol::buffer::PacketBuffer;
-use bark_protocol::packet::{Packet, PacketKind};
+use bark_protocol::packet::Packet;
 
 // expedited forwarding - IP header field indicating that switches should
 // prioritise our packets for minimal delay
@@ -20,6 +21,13 @@ pub enum ListenError {
     SetBroadcast(io::Error),
     Bind(SocketAddrV4, io::Error),
     JoinMulticastGroup(Ipv4Addr, io::Error),
+}
+
+#[derive(StructOpt, Debug, Clone)]
+pub struct SocketOpt {
+    #[structopt(long, name="addr", env = "BARK_MULTICAST")]
+    /// Multicast group address including port, eg. 224.100.100.100:1530
+    pub multicast: SocketAddrV4,
 }
 
 pub struct Socket {
@@ -37,9 +45,9 @@ pub struct Socket {
 pub struct PeerId(SocketAddr);
 
 impl Socket {
-    pub fn open(multicast: SocketAddrV4) -> Result<Socket, ListenError> {
-        let group = *multicast.ip();
-        let port = multicast.port();
+    pub fn open(opt: SocketOpt) -> Result<Socket, ListenError> {
+        let group = *opt.multicast.ip();
+        let port = opt.multicast.port();
 
         let tx = open_multicast(group, SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
         let rx = open_multicast(group, SocketAddrV4::new(group, port))?;
@@ -134,7 +142,7 @@ impl ProtocolSocket {
         let (nbytes, peer) = self.socket.recv_from(&mut buffer)?;
 
         // shrink vec to what we just read:
-        assert!(nbytes <= buffer.len());
+        assert!(nbytes < buffer.len());
         buffer.resize(nbytes, 0);
 
         let buffer = PacketBuffer::from_raw(buffer);
@@ -142,14 +150,11 @@ impl ProtocolSocket {
         Ok((buffer, peer))
     }
 
-    pub fn recv_from(&self) -> Result<(PacketKind, PeerId), io::Error> {
+    pub fn recv_from(&self) -> Result<(Packet, PeerId), io::Error> {
         loop {
             let (buffer, peer) = self.recv_buffer_from()?;
 
-            let packet = Packet::from_buffer(buffer)
-                .and_then(|packet| packet.parse());
-
-            if let Some(packet) = packet {
+            if let Some(packet) = Packet::from_buffer(buffer) {
                 return Ok((packet, peer));
             }
         }

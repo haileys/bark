@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bark-core = { workspace = true }
 bark-device = { workspace = true }
 bark-network = { workspace = true }
 bark-protocol = { workspace = true }
@@ -15,6 +16,9 @@ bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 cpal = { workspace = true }
 derive_more = { workspace = true }
+futures = { workspace = true }
+heapless = { workspace = true }
+log = { workspace = true }
 nix = { workspace = true }
 
 opus = "0.3.0"

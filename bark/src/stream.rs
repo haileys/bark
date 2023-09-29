@@ -82,8 +82,8 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             loop {
                 let (packet, peer) = protocol.recv_from().expect("protocol.recv_from");
 
-                match packet.parse() {
-                    Some(PacketKind::Audio(audio)) => {
+                match packet {
+                    PacketKind::Audio(audio) => {
                         // we should only ever receive an audio packet if another
                         // stream is present. check if it should take over
                         if audio.header().sid > sid {
@@ -91,7 +91,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                             break;
                         }
                     }
-                    Some(PacketKind::Time(mut time)) => {
+                    PacketKind::Time(mut time) => {
                         // only handle packet if it belongs to our stream:
                         if time.data().sid != sid {
                             continue;
@@ -111,17 +111,14 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                         }
 
                     }
-                    Some(PacketKind::StatsRequest(_)) => {
+                    PacketKind::StatsRequest(_) => {
                         let reply = StatsReply::source(sid, node)
                             .expect("allocate StatsReply packet");
 
                         let _ = protocol.send_to(reply.as_packet(), peer);
                     }
-                    Some(PacketKind::StatsReply(_)) => {
+                    PacketKind::StatsReply(_) => {
                         // ignore
-                    }
-                    None => {
-                        // unknown packet, ignore
                     }
                 }
             }
@@ -130,7 +127,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
     // run encode on main thread
     let mut audio_source = bark_device::source::open()
-        .map_err(RunError::OpenSource)?;
+        .map_err(RunError::OpenDevice)?;
 
     let mut audio_header = AudioPacketHeader {
         sid,
@@ -143,7 +140,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
         .expect("allocate Audio packet");
 
     while let Some(packet) = audio_source.read() {
-        let mut timestamp = Timestamp::from_micros_lossy(packet.timestamp).add(delay);
+        let mut timestamp = Timestamp::from_micros_lossy(packet.timestamp) + delay;
 
         if audio_header.pts.0 == 0 {
             audio_header.pts = timestamp.to_micros_lossy();
@@ -156,7 +153,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             let written = audio_buffer.write(data);
 
             // advance
-            timestamp = timestamp.add(written);
+            timestamp = timestamp + written;
             data = &data[written.as_buffer_offset()..];
 
             // if packet buffer is full, finalize it and send off the packet:

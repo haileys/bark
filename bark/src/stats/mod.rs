@@ -48,7 +48,7 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
     loop {
         let (reply, peer) = protocol.recv_from().map_err(RunError::Socket)?;
 
-        let Some(PacketKind::StatsReply(reply)) = reply.parse() else {
+        let PacketKind::StatsReply(reply) = reply else {
             continue;
         };
 
