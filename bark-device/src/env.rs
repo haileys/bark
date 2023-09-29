@@ -32,6 +32,7 @@ pub fn set_source(device: &str) {
     std::env::set_var("PIPEWIRE_NODE", index.0.to_string());
 }
 
+#[derive(Debug)]
 enum Kind {
     Source,
     Sink,
@@ -47,6 +48,8 @@ struct Node {
 struct NodeIndex(u64);
 
 fn find_pulse_node(kind: Kind, name: &str) -> Option<NodeIndex> {
+    log::debug!("invoking pactl to find node: kind={kind:?}, name={name:?}");
+
     let kind = match kind {
         Kind::Source => "sources",
         Kind::Sink => "sinks",

@@ -28,6 +28,11 @@ impl Timing {
 
         let clock_delta = ClockDelta::from_time_packet(&packet);
         self.clock_delta.observe(clock_delta);
+
+        log::debug!("latency={latency}usec, clock_delta={delta}usec",
+            latency = network_latency.as_micros(),
+            delta = clock_delta.as_micros(),
+        );
     }
 
     pub fn network_latency(&self) -> Option<Duration> {

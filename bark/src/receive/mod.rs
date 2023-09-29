@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use bark_core::decode::{DecodeStatus, Decode};
 use bark_network::{Socket, ProtocolSocket};
-use bark_protocol::packet::PacketKind;
+use bark_protocol::packet::{PacketKind, Audio};
 use bark_protocol::time::SampleDuration;
-use bark_protocol::types::{ReceiverId, SessionId, TimePhase};
+use bark_protocol::types::{ReceiverId, SessionId, TimePhase, AudioPacketHeader};
 use structopt::StructOpt;
 
 use crate::stats;
@@ -59,9 +59,8 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
         match packet {
             PacketKind::Audio(audio) => {
-                let header = audio.header();
                 let mut receiver = receiver.lock();
-                let stream = receiver.prepare_stream(header.sid, header.seq);
+                let stream = receiver.prepare_stream(audio.header());
                 stream.receive_audio(audio);
             }
             PacketKind::Time(mut time) => {
@@ -136,14 +135,19 @@ impl Receiver {
     }
 
     /// Resets current stream if necessary.
-    fn prepare_stream(&mut self, sid: SessionId, seq: u64) -> &mut Stream {
+    fn prepare_stream(&mut self, header: &AudioPacketHeader) -> &mut Stream {
         let new_stream = match &self.stream {
-            Some(stream) => stream.sid() < sid,
+            Some(stream) => stream.sid() < header.sid,
             None => true,
         };
 
         if new_stream {
-            self.stream = Some(Stream::new(sid, seq));
+            log::info!("starting new stream: sid={sid:?}, seq={seq}",
+                sid = header.sid,
+                seq = header.seq,
+            )
+            ;
+            self.stream = Some(Stream::new(header));
         }
 
         self.stream.as_mut().unwrap()

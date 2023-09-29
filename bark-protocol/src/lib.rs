@@ -10,7 +10,8 @@ pub const CHANNELS: ChannelCount = ChannelCount(2);
 pub const FRAMES_PER_PACKET: usize = 160;
 pub const SAMPLES_PER_PACKET: usize = CHANNELS.0 as usize * FRAMES_PER_PACKET;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, derive_more::Display)]
+#[display(fmt = "{_0}")]
 pub struct SampleRate(pub u32);
 
 #[derive(Copy, Clone, Debug)]
