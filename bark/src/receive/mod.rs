@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use bark_core::decode::{DecodeStatus, Decode};
 use bark_network::{Socket, ProtocolSocket};
-use bark_protocol::packet::{PacketKind, Audio};
+use bark_protocol::packet::PacketKind;
 use bark_protocol::time::SampleDuration;
 use bark_protocol::types::{ReceiverId, SessionId, TimePhase, AudioPacketHeader};
 use structopt::StructOpt;

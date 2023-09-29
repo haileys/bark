@@ -79,7 +79,7 @@ impl Resampler {
     }
 
     pub fn set_input_rate(&mut self, rate: SampleRate) -> Result<(), SpeexError> {
-        log::debug!("setting rate to {rate}");
+        log::trace!("setting rate to {rate}");
 
         let err = unsafe {
             ffi::speex_resampler_set_rate(

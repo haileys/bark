@@ -155,11 +155,12 @@ impl Sink {
         // take current amount of data in buffer and current device latency
         // to estimate when the audio data written in this call will be played
         // by the device.
+        let now = Timestamp::from_micros_lossy(bark_util::time::now());
         let buffered = self.buffer.capacity() - self.buffer.free_len();
         let buffer_latency = SampleDuration::from_frame_count(u64::try_from(buffered).unwrap());
         let device_latency = self.shared.latency.load();
         let latency = buffer_latency + device_latency;
-        let pts = Timestamp::from_micros_lossy(bark_util::time::now()) + latency;
+        let pts = now + latency;
 
         let n = self.buffer.push_slice(data);
 

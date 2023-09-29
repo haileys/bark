@@ -1,10 +1,10 @@
-use std::num::{NonZeroUsize, NonZeroU16};
+use std::num::NonZeroU16;
 
 use bark_core::decode::AudioSegment;
 use bark_core::receive::timing::Timing;
 use bark_protocol::time::{TimestampDelta, Timestamp, SampleDuration};
 use bark_protocol::types::{SessionId, AudioPacketHeader};
-use bark_protocol::packet::{Time, Audio, Packet};
+use bark_protocol::packet::{Time, Audio};
 
 use bark_core::receive::queue::PacketQueue;
 
