@@ -29,5 +29,5 @@ socket2 = "0.5.3"
 static_assertions = "1.1.0"
 structopt = "0.3.26"
 termcolor = "1.2.0"
-toml = "0.7.6"
+toml = { version = "0.7.6", default-features = false, features = ["parse"] }
 xdg = "2.5.2"
