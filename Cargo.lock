@@ -131,12 +131,12 @@ dependencies = [
  "bytemuck",
  "cpal",
  "derive_more",
+ "env_logger",
  "futures",
  "heapless",
  "log",
  "nix 0.26.2",
  "opus",
- "pretty_env_logger",
  "rand",
  "serde",
  "socket2",
@@ -608,10 +608,8 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
 dependencies = [
- "humantime",
  "is-terminal",
  "log",
- "regex",
  "termcolor",
 ]
 
@@ -915,12 +913,6 @@ checksum = "5444c27eef6923071f7ebcc33e3444508466a76f7a2b93da00ed6e19f30c1ddb"
 dependencies = [
  "windows-sys 0.48.0",
 ]
-
-[[package]]
-name = "humantime"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "iana-time-zone"
@@ -1325,16 +1317,6 @@ name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
-
-[[package]]
-name = "pretty_env_logger"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "865724d4dbe39d9f3dd3b52b88d859d66bcb2d6a0acfd5ea68a65fb66d4bdc1c"
-dependencies = [
- "env_logger",
- "log",
-]
 
 [[package]]
 name = "proc-macro-crate"

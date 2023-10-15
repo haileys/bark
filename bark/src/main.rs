@@ -34,7 +34,7 @@ pub enum RunError {
 }
 
 fn main() -> Result<(), ExitCode> {
-    pretty_env_logger::formatted_timed_builder()
+    env_logger::builder()
         .filter_level(default_log_level())
         .parse_default_env()
         .init();
