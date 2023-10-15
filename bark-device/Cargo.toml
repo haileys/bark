@@ -8,6 +8,7 @@ bark-core = { workspace = true }
 bark-protocol = { workspace = true }
 bark-util = { workspace = true }
 
+bytemuck = { workspace = true }
 cpal = { workspace = true }
 derive_more = { workspace = true }
 heapless = { workspace = true }

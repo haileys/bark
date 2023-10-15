@@ -73,6 +73,10 @@ impl SampleDuration {
         SampleDuration(samples)
     }
 
+    pub fn from_frame_buffer_offset(offset: usize) -> Self {
+        SampleDuration(u64::try_from(offset).unwrap())
+    }
+
     pub fn to_frame_count(self) -> u64 {
         self.0
     }

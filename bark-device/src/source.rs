@@ -1,6 +1,6 @@
 use std::sync::{Mutex, Condvar, Arc};
 
-use bark_protocol::types::TimestampMicros;
+use bark_protocol::types::{TimestampMicros, AudioFrameF32};
 use cpal::{InputCallbackInfo, Stream};
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use heapless::Deque;
@@ -18,7 +18,7 @@ pub struct Source {
 
 pub struct AudioPacket {
     pub timestamp: TimestampMicros,
-    pub data: Vec<f32>,
+    pub data: Vec<AudioFrameF32>,
 }
 
 pub fn open() -> Result<Source, OpenError> {
@@ -50,6 +50,9 @@ pub fn open() -> Result<Source, OpenError> {
 
                 // assert data only contains complete frames:
                 assert!(data.len() % usize::from(bark_protocol::CHANNELS) == 0);
+
+                // convert data to complete frames:
+                let data = bytemuck::cast_slice(data);
 
                 // calculate latency from capture to callback:
                 let callback_ts = info.timestamp().callback;

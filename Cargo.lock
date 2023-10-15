@@ -166,6 +166,7 @@ dependencies = [
  "bark-core",
  "bark-protocol",
  "bark-util",
+ "bytemuck",
  "cpal",
  "derive_more",
  "futures",

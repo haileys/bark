@@ -129,11 +129,11 @@ impl Audio {
         &self.0.as_bytes()[header_size..]
     }
 
-    pub fn buffer(&self) -> &[f32] {
+    pub fn buffer(&self) -> &[AudioFrameF32] {
         bytemuck::cast_slice(self.as_bytes())
     }
 
-    pub fn buffer_mut(&mut self) -> &mut [f32] {
+    pub fn buffer_mut(&mut self) -> &mut [AudioFrameF32] {
         let header_size = size_of::<types::AudioPacketHeader>();
         let buffer_bytes = &mut self.0.as_bytes_mut()[header_size..];
         bytemuck::cast_slice_mut(buffer_bytes)
@@ -185,7 +185,7 @@ impl AudioWriter {
         SampleDuration::ONE_PACKET - self.length()
     }
 
-    fn remaining_buffer_mut(&mut self) -> &mut [f32] {
+    fn remaining_buffer_mut(&mut self) -> &mut [AudioFrameF32] {
         let offset = self.length().as_buffer_offset();
         &mut self.packet.buffer_mut()[offset..]
     }
@@ -194,11 +194,11 @@ impl AudioWriter {
         self.remaining() == SampleDuration::zero()
     }
 
-    pub fn write(&mut self, audio: &[f32]) -> SampleDuration {
+    pub fn write(&mut self, audio: &[AudioFrameF32]) -> SampleDuration {
         let input_duration = SampleDuration::from_buffer_offset(audio.len());
         let copy_duration = cmp::min(input_duration, self.remaining());
 
-        let copy_len = copy_duration.as_buffer_offset();
+        let copy_len = copy_duration.as_frame_buffer_offset();
         let source_buffer = &audio[0..copy_len];
         let dest_buffer = &mut self.remaining_buffer_mut()[0..copy_len];
         dest_buffer.copy_from_slice(source_buffer);
