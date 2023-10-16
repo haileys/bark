@@ -71,9 +71,10 @@ impl Encode {
         n
     }
 
-    pub fn write(&mut self, mut pts: Timestamp, data: &[AudioFrameF32]) {
+    pub fn write(&mut self, mut pts: Timestamp, mut data: &[AudioFrameF32]) {
         while data.len() > 0 {
             let n = self.write_partial(pts, data);
+            data = &data[n..];
             pts += SampleDuration::from_frame_buffer_offset(n);
         }
     }

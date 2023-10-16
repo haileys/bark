@@ -195,7 +195,7 @@ impl AudioWriter {
     }
 
     pub fn write(&mut self, audio: &[AudioFrameF32]) -> SampleDuration {
-        let input_duration = SampleDuration::from_buffer_offset(audio.len());
+        let input_duration = SampleDuration::from_frame_buffer_offset(audio.len());
         let copy_duration = cmp::min(input_duration, self.remaining());
 
         let copy_len = copy_duration.as_frame_buffer_offset();
