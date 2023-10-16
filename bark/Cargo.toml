@@ -31,3 +31,4 @@ structopt = "0.3.26"
 termcolor = "1.2.0"
 toml = { version = "0.7.6", default-features = false, features = ["parse"] }
 xdg = "2.5.2"
+thread-executor = "0.1.0"

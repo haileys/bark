@@ -97,7 +97,7 @@ fn start_decode_thread<R, S>(decode: Decode<R, S>) where
     S: bark_core::decode::AudioSink + Send + 'static,
 {
     bark_util::thread::start("bark/decode", || {
-        futures::executor::block_on(async move {
+        thread_executor::block_on(async move {
             decode.run().await;
         })
     })
