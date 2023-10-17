@@ -81,6 +81,10 @@ impl SampleDuration {
         self.0
     }
 
+    pub fn as_frame_buffer_offset(&self) -> usize {
+        usize::try_from(self.0).unwrap()
+    }
+
     pub fn from_std_duration_lossy(duration: core::time::Duration) -> SampleDuration {
         let duration = (duration.as_micros() * u128::from(SAMPLE_RATE)) / 1_000_000;
         let duration = u64::try_from(duration).expect("can't narrow duration to u64");
@@ -91,22 +95,6 @@ impl SampleDuration {
         let usecs = (u128::from(self.0) * 1_000_000) / u128::from(SAMPLE_RATE);
         let usecs = u64::try_from(usecs).expect("can't narrow usecs to u64");
         core::time::Duration::from_micros(usecs)
-    }
-
-    pub fn as_buffer_offset(&self) -> usize {
-        let offset = self.0 * u64::from(CHANNELS);
-        usize::try_from(offset).unwrap()
-    }
-
-    pub fn as_frame_buffer_offset(&self) -> usize {
-        usize::try_from(self.0).unwrap()
-    }
-
-    pub fn from_buffer_offset(offset: usize) -> Self {
-        let channels = usize::from(CHANNELS);
-        assert!(offset % channels == 0);
-
-        SampleDuration(u64::try_from(offset / channels).unwrap())
     }
 }
 

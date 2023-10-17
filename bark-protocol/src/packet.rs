@@ -186,7 +186,7 @@ impl AudioWriter {
     }
 
     fn remaining_buffer_mut(&mut self) -> &mut [AudioFrameF32] {
-        let offset = self.length().as_buffer_offset();
+        let offset = self.length().as_frame_buffer_offset();
         &mut self.packet.buffer_mut()[offset..]
     }
 
