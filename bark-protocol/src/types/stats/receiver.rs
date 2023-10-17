@@ -10,7 +10,7 @@ pub struct ReceiverStats {
     stream_status: u8,
     _pad: [u8; 6],
 
-    audio_latency: f64,
+    audio_offset: f64,
     buffer_length: f64,
     network_latency: f64,
     predict_offset: f64,
@@ -83,7 +83,7 @@ impl ReceiverStats {
 
     /// Audio latency in seconds
     pub fn audio_latency(&self) -> Option<f64> {
-        self.field(ReceiverStatsFlags::HAS_AUDIO_LATENCY, self.audio_latency)
+        self.field(ReceiverStatsFlags::HAS_AUDIO_LATENCY, self.audio_offset)
     }
 
     /// Duration of buffered audio in seconds
@@ -105,7 +105,7 @@ impl ReceiverStats {
         let request_micros = request_pts.to_micros_lossy().0 as f64;
         let packet_micros = packet_pts.to_micros_lossy().0 as f64;
 
-        self.audio_latency = (request_micros - packet_micros) / 1_000_000.0;
+        self.audio_offset = (request_micros - packet_micros) / 1_000_000.0;
         self.flags.insert(ReceiverStatsFlags::HAS_AUDIO_LATENCY);
     }
 
