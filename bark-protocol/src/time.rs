@@ -2,7 +2,7 @@ use core::ops::{Add, AddAssign, Sub};
 
 use crate::packet;
 use crate::types::TimestampMicros;
-use crate::{SAMPLE_RATE, FRAMES_PER_PACKET, CHANNELS};
+use crate::{SAMPLE_RATE, FRAMES_PER_PACKET};
 
 /// A timestamp with implicit denominator SAMPLE_RATE
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
