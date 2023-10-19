@@ -12,15 +12,11 @@ pub fn set_name(name: &str) {
 }
 
 pub fn set_realtime_priority() {
-    let rc = unsafe {
-        libc::sched_setscheduler(
-            0,
-            libc::SCHED_FIFO,
-            &libc::sched_param {
-                sched_priority: 99,
-            }
-        )
-    };
+    // work around the libc crate exposing more struct members on some libc's
+    let mut sched_param: libc::sched_param = unsafe { std::mem::zeroed() };
+    sched_param.sched_priority = 99;
+
+    let rc = unsafe { libc::sched_setscheduler(0, libc::SCHED_FIFO, &sched_param) };
 
     if rc < 0 {
         static WARNED: AtomicBool = AtomicBool::new(false);
