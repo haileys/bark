@@ -2,19 +2,7 @@ use std::process::{Command, Stdio};
 
 use serde::Deserialize;
 
-pub fn set_sink_env(device: &str) {
-    let Some(index) = find_pulse_node(Kind::Sink, device) else {
-        eprintln!("falling back to default audio sink");
-        return;
-    };
-
-    println!("using audio sink at index {}: {}", index.0, device);
-
-    std::env::set_var("PULSE_SINK", device);
-    std::env::set_var("PIPEWIRE_NODE", index.0.to_string());
-}
-
-pub fn set_source_env(device: &str) {
+pub fn set_source(device: &str) {
     let Some(index) = find_pulse_node(Kind::Source, device) else {
         eprintln!("falling back to default audio source");
         return;
@@ -28,7 +16,6 @@ pub fn set_source_env(device: &str) {
 
 enum Kind {
     Source,
-    Sink,
 }
 
 #[derive(Deserialize)]
@@ -43,7 +30,6 @@ struct NodeIndex(u64);
 fn find_pulse_node(kind: Kind, name: &str) -> Option<NodeIndex> {
     let kind = match kind {
         Kind::Source => "sources",
-        Kind::Sink => "sinks",
     };
 
     let result = Command::new("pactl")

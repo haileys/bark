@@ -2,12 +2,16 @@
 resolver = "2"
 members = [
     "bark",
+    "bark-core",
     "bark-protocol",
 ]
 
 [workspace.dependencies]
+bark-core = { path = "bark-core" }
 bark-protocol = { path = "bark-protocol" }
 
 bitflags = { version = "2.4.0", features = ["bytemuck"] }
 bytemuck = { version = "1.13", features = ["derive"] }
 derive_more = { version = "0.99" }
+heapless = "0.7"
+log = "0.4"

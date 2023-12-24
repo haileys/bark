@@ -21,7 +21,14 @@ pub struct Source {
 
 #[derive(Deserialize, Default)]
 pub struct Receive {
+    output: Output,
+}
+
+#[derive(Deserialize, Default)]
+pub struct Output {
     device: Option<String>,
+    period: Option<u64>,
+    buffer: Option<u64>,
 }
 
 fn set_env_option<T: ToString>(name: &str, value: Option<T>) {
@@ -34,7 +41,9 @@ pub fn load_into_env(config: &Config) {
     set_env_option("BARK_MULTICAST", config.multicast);
     set_env_option("BARK_SOURCE_DEVICE", config.source.device.as_ref());
     set_env_option("BARK_SOURCE_DELAY_MS", config.source.delay_ms);
-    set_env_option("BARK_RECEIVE_DEVICE", config.receive.device.as_ref());
+    set_env_option("BARK_RECEIVE_OUTPUT_DEVICE", config.receive.output.device.as_ref());
+    set_env_option("BARK_RECEIVE_OUTPUT_PERIOD", config.receive.output.period);
+    set_env_option("BARK_RECEIVE_OUTPUT_BUFFER", config.receive.output.buffer);
 }
 
 fn load_file(path: &Path) -> Option<Config> {

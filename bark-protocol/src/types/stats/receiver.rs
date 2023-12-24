@@ -12,6 +12,7 @@ pub struct ReceiverStats {
 
     audio_latency: f64,
     buffer_length: f64,
+    output_latency: f64,
     network_latency: f64,
     predict_offset: f64,
 }
@@ -52,6 +53,7 @@ bitflags! {
         const HAS_BUFFER_LENGTH   = 0x08;
         const HAS_NETWORK_LATENCY = 0x10;
         const HAS_PREDICT_OFFSET  = 0x20;
+        const HAS_OUTPUT_LATENCY  = 0x40;
     }
 }
 
@@ -86,9 +88,14 @@ impl ReceiverStats {
         self.field(ReceiverStatsFlags::HAS_AUDIO_LATENCY, self.audio_latency)
     }
 
-    /// Duration of buffered audio in seconds
+    /// Length of Bark-internal audio buffer in seconds
     pub fn buffer_length(&self) -> Option<f64> {
         self.field(ReceiverStatsFlags::HAS_BUFFER_LENGTH, self.buffer_length)
+    }
+
+    /// Length of output audio buffer (including hardware latency) in seconds
+    pub fn output_latency(&self) -> Option<f64> {
+        self.field(ReceiverStatsFlags::HAS_OUTPUT_LATENCY, self.output_latency)
     }
 
     /// Duration of buffered audio in seconds
@@ -112,6 +119,11 @@ impl ReceiverStats {
     pub fn set_buffer_length(&mut self, length: SampleDuration) {
         self.buffer_length = length.to_std_duration_lossy().as_micros() as f64 / 1_000_000.0;
         self.flags.insert(ReceiverStatsFlags::HAS_BUFFER_LENGTH);
+    }
+
+    pub fn set_output_latency(&mut self, latency: SampleDuration) {
+        self.output_latency = latency.to_std_duration_lossy().as_micros() as f64 / 1_000_000.0;
+        self.flags.insert(ReceiverStatsFlags::HAS_OUTPUT_LATENCY);
     }
 
     pub fn set_network_latency(&mut self, latency: core::time::Duration) {
