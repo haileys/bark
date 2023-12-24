@@ -88,6 +88,10 @@ impl PacketQueue {
             Ok(&mut slices.1[idx - slices.0.len()])
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.queue.len()
+    }
 }
 
 enum DelayStart {

@@ -25,3 +25,5 @@ structopt = "0.3.26"
 termcolor = "1.2.0"
 toml = "0.7.6"
 xdg = "2.5.2"
+thiserror = "1.0.51"
+env_logger = { version = "0.10", default-features = false, features = ["color", "auto-color", "humantime"] }

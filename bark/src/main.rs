@@ -25,6 +25,7 @@ pub enum RunError {
     Listen(socket::ListenError),
     NoDeviceAvailable,
     NoSupportedStreamConfig,
+    OpenAudioOutput(audio::output::OpenError),
     StreamConfigs(cpal::SupportedStreamConfigsError),
     BuildStream(cpal::BuildStreamError),
     Stream(cpal::PlayStreamError),

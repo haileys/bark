@@ -1,55 +1,35 @@
 use std::array;
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bark_core::receive::queue::PacketQueue;
 use bytemuck::Zeroable;
-use cpal::OutputCallbackInfo;
-use cpal::traits::{HostTrait, DeviceTrait};
 use structopt::StructOpt;
 
-use bark_protocol::SampleRate;
+use bark_protocol::{SampleRate, SAMPLES_PER_PACKET, FRAMES_PER_PACKET};
 use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
-use bark_protocol::types::{SessionId, ReceiverId, TimePhase, AudioPacketHeader, TimestampMicros};
+use bark_protocol::types::{SessionId, ReceiverId, TimePhase, AudioPacketHeader};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 
+use crate::audio::output::Output;
 use crate::resample::Resampler;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
-use crate::{util, time, stats};
+use crate::{time, stats};
 use crate::RunError;
 
 pub struct Receiver {
-    opt: ReceiveOpt,
     stats: ReceiverStats,
     stream: Option<Stream>,
 }
 
-struct QueueEntry {
-    seq: u64,
-    pts: Option<Timestamp>,
-    consumed: SampleDuration,
-    packet: Option<Audio>,
-}
-
-impl QueueEntry {
-    pub fn as_full_buffer(&self) -> &[f32] {
-        self.packet.as_ref()
-            .map(|packet| packet.buffer())
-            .unwrap_or(&[0f32; bark_protocol::SAMPLES_PER_PACKET])
-    }
-}
-
 struct Stream {
     sid: SessionId,
-    sync: bool,
     resampler: Resampler,
     rate_adjust: RateAdjust,
     latency: Aggregate<Duration>,
     clock_delta: Aggregate<ClockDelta>,
     queue: PacketQueue,
-    buffer: Vec<f32>,
 }
 
 impl Stream {
@@ -59,13 +39,11 @@ impl Stream {
 
         Stream {
             sid: header.sid,
-            sync: false,
             resampler,
             rate_adjust: RateAdjust::new(),
             latency: Aggregate::new(),
             clock_delta: Aggregate::new(),
             queue,
-            buffer: Vec::new(),
         }
     }
 
@@ -87,9 +65,8 @@ pub struct ClockInfo {
 }
 
 impl Receiver {
-    pub fn new(opt: ReceiveOpt) -> Self {
+    pub fn new() -> Self {
         Receiver {
-            opt,
             stream: None,
             stats: ReceiverStats::new(),
         }
@@ -133,10 +110,6 @@ impl Receiver {
         stream.clock_delta.observe(clock_delta);
     }
 
-    fn get_stream(&mut self, sid: SessionId) -> Option<&mut Stream> {
-        self.stream.as_mut().filter(|stream| stream.sid == sid)
-    }
-
     fn prepare_stream(&mut self, header: &AudioPacketHeader) -> &mut Stream {
         let new_stream = match &self.stream {
             Some(stream) => stream.sid < header.sid,
@@ -172,69 +145,34 @@ impl Receiver {
         }
     }
 
-    pub fn fill_stream_buffer(&mut self, mut data: &mut [f32], pts: Timestamp) {
-        // complete frames only:
-        assert!(data.len() % 2 == 0);
-
+    pub fn write_audio(&mut self, buffer: &mut [f32], pts: Timestamp) -> SampleDuration {
         // get stream start timing information:
         let Some(stream) = self.stream.as_mut() else {
             // stream hasn't started, just fill buffer with silence and return
-            data.fill(0f32);
-            return;
+            buffer[0..SAMPLES_PER_PACKET].fill(0f32);
+            return SampleDuration::ONE_PACKET;
         };
 
         let Some(packet) = stream.queue.pop_front() else {
             // no packets yet
-            data.fill(0f32);
-            return;
+            buffer[0..SAMPLES_PER_PACKET].fill(0f32);
+            return SampleDuration::ONE_PACKET;
         };
 
         let header_pts = Timestamp::from_micros_lossy(packet.header().pts);
+
         let timing = stream.adjust_pts(header_pts)
             .map(|stream_pts| Timing {
                 real: pts,
                 play: stream_pts,
             });
 
-        /* TODO
-        let real_ts_after_fill = pts.add(SampleDuration::from_buffer_offset(data.len()));
-
-        let mut stream_ts = None;
-
-        // copy data to out
-        while data.len() > 0 {
-            let Some(front) = self.queue.front_mut() else {
-                data.fill(0f32);
-                self.stats.set_stream(StreamStatus::Miss);
-                return;
-            };
-
-            let buffer = front.as_full_buffer();
-            let buffer_offset = front.consumed.as_buffer_offset();
-            let buffer_remaining = buffer.len() - buffer_offset;
-
-            let copy_count = std::cmp::min(data.len(), buffer_remaining);
-            let buffer_copy_end = buffer_offset + copy_count;
-
-            let input = &buffer[buffer_offset..buffer_copy_end];
-            let output = &mut data[0..copy_count];
-            let result = stream.resampler.process_interleaved(input, output)
-                .expect("resample error!");
-
-            data = &mut data[result.output_written.as_buffer_offset()..];
-            front.consumed = front.consumed.add(result.input_read);
-
-            stream_ts = front.pts.map(|front_pts| front_pts.add(front.consumed));
-
-            // pop packet if fully consumed
-            if front.consumed == SampleDuration::ONE_PACKET {
-                self.queue.pop_front();
-            }
-        }
-        */
-
         if let Some(timing) = timing {
+            println!("real = {:?}, adj_pts = {:?}, hdr_pts = {:?}; delta = {:?}",
+                timing.real, timing.play, header_pts, timing.real.delta(timing.play));
+
             let rate = stream.rate_adjust.sample_rate(timing);
+            eprintln!("rate = {rate:?}");
 
             let _ = stream.resampler.set_input_rate(rate.0);
 
@@ -247,10 +185,16 @@ impl Receiver {
             self.stats.set_audio_latency(timing.real, timing.play);
         }
 
-        // TODO
-        // self.stats.set_buffer_length(self.queue.iter()
-        //     .map(|entry| SampleDuration::ONE_PACKET.sub(entry.consumed))
-        //     .fold(SampleDuration::zero(), |cum, dur| cum.add(dur)));
+        let resample = stream.resampler.process_interleaved(packet.buffer(), buffer)
+            .expect("resample error!");
+
+        assert_eq!(resample.input_read.as_buffer_offset(), packet.buffer().len());
+
+        self.stats.set_buffer_length(
+            SampleDuration::from_frame_count(
+                (FRAMES_PER_PACKET * stream.queue.len()).try_into().unwrap()));
+
+        resample.output_written
     }
 }
 
@@ -281,8 +225,8 @@ impl RateAdjust {
 
     fn adjusted_rate(&mut self, timing: Timing) -> Option<SampleRate> {
         // parameters, maybe these could be cli args?
-        let start_slew_threshold = Duration::from_micros(2000);
-        let stop_slew_threshold = Duration::from_micros(100);
+        let start_slew_threshold = Duration::from_micros(3000);
+        let stop_slew_threshold = Duration::from_micros(1000);
         let slew_target_duration = Duration::from_millis(500);
 
         // turn them into native units
@@ -305,12 +249,12 @@ impl RateAdjust {
         let rate_offset = frame_offset.as_frames() * 1_000_000 / slew_duration_duration;
         let rate = base_sample_rate + rate_offset;
 
-        // clamp any potential slow down to 2%, we shouldn't ever get too far
+        // clamp any potential slow down to 1%, we shouldn't ever get too far
         // ahead of the stream
-        let rate = std::cmp::max(base_sample_rate * 98 / 100, rate);
+        let rate = std::cmp::max(base_sample_rate * 99 / 100, rate);
 
         // let the speed up run much higher, but keep it reasonable still
-        let rate = std::cmp::min(base_sample_rate * 2, rate);
+        let rate = std::cmp::min(base_sample_rate * 101 / 100, rate);
 
         self.slew = true;
         Some(SampleRate(u32::try_from(rate).unwrap()))
@@ -354,8 +298,6 @@ pub struct ReceiveOpt {
     pub socket: SocketOpt,
     #[structopt(long, env = "BARK_RECEIVE_DEVICE")]
     pub device: Option<String>,
-    #[structopt(long, default_value="12")]
-    pub max_seq_gap: usize,
 }
 
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
@@ -366,52 +308,51 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         crate::audio::env::set_sink(device);
     }
 
-    let host = cpal::default_host();
-
-    let device = host.default_output_device()
-        .ok_or(RunError::NoDeviceAvailable)?;
-
-    let config = util::config_for_device(&device)?;
-
     struct SharedState {
         pub recv: Receiver,
     }
 
+    let output = Output::new().map_err(RunError::OpenAudioOutput)?;
+
     let state = Arc::new(Mutex::new(SharedState {
-        recv: Receiver::new(opt.clone()),
+        recv: Receiver::new(),
     }));
 
-    let _stream = device.build_output_stream(&config,
-        {
-            let state = state.clone();
-            let mut initialized_thread = false;
-            move |data: &mut [f32], info: &OutputCallbackInfo| {
-                if !initialized_thread {
-                    crate::thread::set_name("bark/audio");
-                    crate::thread::set_realtime_priority();
-                    initialized_thread = true;
-                }
+    std::thread::spawn({
+        let state = state.clone();
+        move || {
+            crate::thread::set_name("bark/audio");
 
-                let stream_timestamp = info.timestamp();
-
-                let output_latency = stream_timestamp.playback
-                    .duration_since(&stream_timestamp.callback)
-                    .unwrap_or_default();
-
-                let output_latency = SampleDuration::from_std_duration_lossy(output_latency);
-
-                let now = Timestamp::from_micros_lossy(time::now());
-                let pts = now.add(output_latency);
-
+            loop {
                 let mut state = state.lock().unwrap();
-                state.recv.fill_stream_buffer(data, pts);
+
+                let delay = output.delay().unwrap();
+
+                let pts = time::now();
+                let pts = Timestamp::from_micros_lossy(pts);
+                let pts = pts.add(delay);
+
+                println!("delay = {delay:?}");
+
+                // this should be large enough for `write_audio` to process an
+                // entire packet with:
+                let mut buffer = [0f32; SAMPLES_PER_PACKET * 2];
+                let duration = state.recv.write_audio(&mut buffer, pts);
+
+                // drop lock before calling `Output::write` (blocking!)
+                drop(state);
+
+                // send audio to ALSA
+                match output.write(&buffer[0..duration.as_buffer_offset()]) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        eprintln!("error playing audio: {e}");
+                        break;
+                    }
+                };
             }
-        },
-        move |err| {
-            eprintln!("stream error! {err:?}");
-        },
-        None
-    ).map_err(RunError::BuildStream)?;
+        }
+    });
 
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
