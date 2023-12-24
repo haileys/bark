@@ -8,6 +8,7 @@ pub struct Output {
 }
 
 pub struct OutputOpt {
+    pub device: Option<String>,
     pub period: SampleDuration,
     pub buffer: SampleDuration,
 }
@@ -30,7 +31,8 @@ pub enum WriteAudioError {
 
 impl Output {
     pub fn new(opt: OutputOpt) -> Result<Self, OpenError> {
-        let pcm = PCM::new("default", Direction::Playback, false)?;
+        let device_name = opt.device.as_deref().unwrap_or("default");
+        let pcm = PCM::new(device_name, Direction::Playback, false)?;
 
         {
             let hwp = HwParams::any(&pcm)?;

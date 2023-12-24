@@ -311,15 +311,12 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let receiver_id = generate_receiver_id();
     let node = stats::node::get();
 
-    if let Some(device) = &opt.device {
-        crate::audio::env::set_sink(device);
-    }
-
     struct SharedState {
         pub recv: Receiver,
     }
 
     let output = Output::new(OutputOpt {
+        device: opt.device,
         period: opt.device_period
             .map(SampleDuration::from_frame_count)
             .unwrap_or(DEFAULT_PERIOD),

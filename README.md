@@ -44,10 +44,10 @@ Note: if using Pipewire, you must have `pipewire-alsa` installed for this to wor
     3676    alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo     PipeWire        s32le 2ch 44100Hz       RUNNING
     ```
 
-* Run the Bark receiver:
+* Run the Bark receiver, passing the appropriate ALSA device name for your sound server:
 
     ```sh-session
-    $ bark receive --multicast 224.100.100.100:1530 --device alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo
+    $ bark receive --multicast 224.100.100.100:1530 --device pipewire:NODE=alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo
     ```
 
 ### Configuration
@@ -68,7 +68,7 @@ device = "Bark"
 delay_ms = 15
 
 [receive.device]
-name = "alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo"
+name = "pipewire:NODE=MyNodeName"
 period = 120 # default: send audio to hardware in discrete chunks of 120 frames
 buffer = 240 # default: buffer 240 frames of decoded audio in memory
 ```
