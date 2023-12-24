@@ -295,16 +295,16 @@ pub struct ReceiveOpt {
     pub socket: SocketOpt,
 
     /// Audio device name
-    #[structopt(long, env = "BARK_RECEIVE_DEVICE_NAME")]
-    pub device: Option<String>,
+    #[structopt(long, env = "BARK_RECEIVE_OUTPUT_DEVICE")]
+    pub output_device: Option<String>,
 
     /// Size of discrete audio transfer buffer in frames
-    #[structopt(long, env = "BARK_RECEIVE_DEVICE_PERIOD")]
-    pub device_period: Option<u64>,
+    #[structopt(long, env = "BARK_RECEIVE_OUTPUT_PERIOD")]
+    pub output_period: Option<u64>,
 
     /// Size of decoded audio buffer in frames
-    #[structopt(long, env = "BARK_RECEIVE_DEVICE_BUFFER")]
-    pub device_buffer: Option<u64>,
+    #[structopt(long, env = "BARK_RECEIVE_OUTPUT_BUFFER")]
+    pub output_buffer: Option<u64>,
 }
 
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
@@ -316,11 +316,11 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     }
 
     let output = Output::new(OutputOpt {
-        device: opt.device,
-        period: opt.device_period
+        device: opt.output_device,
+        period: opt.output_period
             .map(SampleDuration::from_frame_count)
             .unwrap_or(DEFAULT_PERIOD),
-        buffer: opt.device_buffer
+        buffer: opt.output_buffer
             .map(SampleDuration::from_frame_count)
             .unwrap_or(DEFAULT_BUFFER),
     }).map_err(RunError::OpenAudioOutput)?;
