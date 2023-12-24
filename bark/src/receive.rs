@@ -168,11 +168,7 @@ impl Receiver {
             });
 
         if let Some(timing) = timing {
-            println!("real = {:?}, adj_pts = {:?}, hdr_pts = {:?}; delta = {:?}",
-                timing.real, timing.play, header_pts, timing.real.delta(timing.play));
-
             let rate = stream.rate_adjust.sample_rate(timing);
-            eprintln!("rate = {rate:?}");
 
             let _ = stream.resampler.set_input_rate(rate.0);
 
