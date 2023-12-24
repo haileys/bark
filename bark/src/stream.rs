@@ -36,7 +36,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let host = cpal::default_host();
 
     if let Some(device) = &opt.device {
-        crate::audio::set_source_env(device);
+        crate::audio::env::set_source(device);
     }
 
     let device = host.default_input_device()

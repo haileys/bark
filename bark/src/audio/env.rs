@@ -2,7 +2,7 @@ use std::process::{Command, Stdio};
 
 use serde::Deserialize;
 
-pub fn set_sink_env(device: &str) {
+pub fn set_sink(device: &str) {
     let Some(index) = find_pulse_node(Kind::Sink, device) else {
         eprintln!("falling back to default audio sink");
         return;
@@ -14,7 +14,7 @@ pub fn set_sink_env(device: &str) {
     std::env::set_var("PIPEWIRE_NODE", index.0.to_string());
 }
 
-pub fn set_source_env(device: &str) {
+pub fn set_source(device: &str) {
     let Some(index) = find_pulse_node(Kind::Source, device) else {
         eprintln!("falling back to default audio source");
         return;
