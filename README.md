@@ -67,8 +67,10 @@ multicast = "224.100.100.100:1530"
 device = "Bark"
 delay_ms = 15
 
-[receive]
-device = "alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo"
+[receive.device]
+name = "alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo"
+period = 120 # default: send audio to hardware in discrete chunks of 120 frames
+buffer = 240 # default: buffer 240 frames of decoded audio in memory
 ```
 
 ### Monitoring the stream

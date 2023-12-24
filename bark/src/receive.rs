@@ -12,7 +12,8 @@ use bark_protocol::types::{SessionId, ReceiverId, TimePhase, AudioPacketHeader};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 
-use crate::audio::output::Output;
+use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER};
+use crate::audio::output::{Output, OutputOpt};
 use crate::resample::Resampler;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{time, stats};
@@ -292,8 +293,18 @@ impl<T: Copy + Default + Ord> Aggregate<T> {
 pub struct ReceiveOpt {
     #[structopt(flatten)]
     pub socket: SocketOpt,
-    #[structopt(long, env = "BARK_RECEIVE_DEVICE")]
+
+    /// Audio device name
+    #[structopt(long, env = "BARK_RECEIVE_DEVICE_NAME")]
     pub device: Option<String>,
+
+    /// Size of discrete audio transfer buffer in frames
+    #[structopt(long, env = "BARK_RECEIVE_DEVICE_PERIOD")]
+    pub device_period: Option<u64>,
+
+    /// Size of decoded audio buffer in frames
+    #[structopt(long, env = "BARK_RECEIVE_DEVICE_BUFFER")]
+    pub device_buffer: Option<u64>,
 }
 
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
@@ -308,7 +319,14 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         pub recv: Receiver,
     }
 
-    let output = Output::new().map_err(RunError::OpenAudioOutput)?;
+    let output = Output::new(OutputOpt {
+        period: opt.device_period
+            .map(SampleDuration::from_frame_count)
+            .unwrap_or(DEFAULT_PERIOD),
+        buffer: opt.device_buffer
+            .map(SampleDuration::from_frame_count)
+            .unwrap_or(DEFAULT_BUFFER),
+    }).map_err(RunError::OpenAudioOutput)?;
 
     let state = Arc::new(Mutex::new(SharedState {
         recv: Receiver::new(),
