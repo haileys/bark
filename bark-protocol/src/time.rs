@@ -27,6 +27,10 @@ impl Timestamp {
         Timestamp(self.0.checked_add(duration.0).unwrap())
     }
 
+    pub fn saturating_duration_since(&self, other: Timestamp) -> SampleDuration {
+        SampleDuration(self.0.saturating_sub(other.0))
+    }
+
     pub fn duration_since(&self, other: Timestamp) -> SampleDuration {
         SampleDuration(self.0.checked_sub(other.0).unwrap())
     }
@@ -55,6 +59,10 @@ impl SampleDuration {
 
     pub const fn from_frame_count(samples: u64) -> Self {
         SampleDuration(samples)
+    }
+
+    pub fn to_frame_count(self) -> u64 {
+        self.0
     }
 
     pub fn from_std_duration_lossy(duration: core::time::Duration) -> SampleDuration {

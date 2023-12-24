@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use bark_core::receive::queue::PacketQueue;
 use bytemuck::Zeroable;
 use cpal::OutputCallbackInfo;
 use cpal::traits::{HostTrait, DeviceTrait};
@@ -10,7 +11,7 @@ use structopt::StructOpt;
 
 use bark_protocol::SampleRate;
 use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
-use bark_protocol::types::{SessionId, ReceiverId, TimePhase};
+use bark_protocol::types::{SessionId, ReceiverId, TimePhase, AudioPacketHeader, TimestampMicros};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 
@@ -23,7 +24,6 @@ pub struct Receiver {
     opt: ReceiveOpt,
     stats: ReceiverStats,
     stream: Option<Stream>,
-    queue: VecDeque<QueueEntry>,
 }
 
 struct QueueEntry {
@@ -43,26 +43,29 @@ impl QueueEntry {
 
 struct Stream {
     sid: SessionId,
-    start_seq: u64,
     sync: bool,
     resampler: Resampler,
     rate_adjust: RateAdjust,
     latency: Aggregate<Duration>,
     clock_delta: Aggregate<ClockDelta>,
+    queue: PacketQueue,
+    buffer: Vec<f32>,
 }
 
 impl Stream {
-    pub fn start_from_packet(audio: &Audio) -> Self {
+    pub fn new(header: &AudioPacketHeader) -> Self {
         let resampler = Resampler::new();
+        let queue = PacketQueue::new(header);
 
         Stream {
-            sid: audio.header().sid,
-            start_seq: audio.header().seq,
+            sid: header.sid,
             sync: false,
             resampler,
             rate_adjust: RateAdjust::new(),
             latency: Aggregate::new(),
             clock_delta: Aggregate::new(),
+            queue,
+            buffer: Vec::new(),
         }
     }
 
@@ -85,12 +88,9 @@ pub struct ClockInfo {
 
 impl Receiver {
     pub fn new(opt: ReceiveOpt) -> Self {
-        let queue = VecDeque::with_capacity(opt.max_seq_gap);
-
         Receiver {
             opt,
             stream: None,
-            queue,
             stats: ReceiverStats::new(),
         }
     }
@@ -133,111 +133,43 @@ impl Receiver {
         stream.clock_delta.observe(clock_delta);
     }
 
-    fn prepare_stream(&mut self, packet: &Audio) -> bool {
-        if let Some(stream) = self.stream.as_mut() {
-            let header = packet.header();
+    fn get_stream(&mut self, sid: SessionId) -> Option<&mut Stream> {
+        self.stream.as_mut().filter(|stream| stream.sid == sid)
+    }
 
-            if header.sid < stream.sid {
-                // packet belongs to a previous stream, ignore
-                return false;
-            }
+    fn prepare_stream(&mut self, header: &AudioPacketHeader) -> &mut Stream {
+        let new_stream = match &self.stream {
+            Some(stream) => stream.sid < header.sid,
+            None => true,
+        };
 
-            if header.sid > stream.sid {
-                // new stream is taking over! switch over to it
-                println!("\nnew stream beginning");
-                self.stream = Some(Stream::start_from_packet(packet));
-                self.stats.clear();
-                self.queue.clear();
-                return true;
-            }
-
-            if header.seq < stream.start_seq {
-                println!("\nreceived packet with seq before start, dropping");
-                return false;
-            }
-
-            if let Some(front) = self.queue.front() {
-                if header.seq <= front.seq {
-                    println!("\nreceived packet with seq <= queue front seq, dropping");
-                    return false;
-                }
-            }
-
-            if let Some(back) = self.queue.back() {
-                if back.seq + self.opt.max_seq_gap as u64 <= header.seq {
-                    println!("\nreceived packet with seq too far in future, resetting stream");
-                    self.stream = Some(Stream::start_from_packet(packet));
-                    self.stats.clear();
-                    self.queue.clear();
-                }
-            }
-
-            true
-        } else {
-            self.stream = Some(Stream::start_from_packet(packet));
+        if new_stream {
+            // new stream is taking over! switch over to it
+            println!("\nnew stream beginning");
+            self.stream = Some(Stream::new(header));
             self.stats.clear();
-            true
         }
+
+        self.stream.as_mut().unwrap()
     }
 
     pub fn receive_audio(&mut self, packet: Audio) {
         let now = time::now();
 
-        if !self.prepare_stream(&packet) {
-            return;
-        }
+        let packet_dts = packet.header().dts;
 
-        // we are guaranteed that if prepare_stream returns true,
-        // self.stream is Some:
-        let stream = self.stream.as_ref().unwrap();
+        let stream = self.prepare_stream(packet.header());
+        stream.queue.insert_packet(packet);
 
         if let Some(latency) = stream.network_latency() {
             if let Some(clock_delta) = stream.clock_delta.median() {
                 let latency_usec = u64::try_from(latency.as_micros()).unwrap();
                 let delta_usec = clock_delta.as_micros();
                 let predict_dts = (now.0 - latency_usec).checked_add_signed(-delta_usec).unwrap();
-                let predict_diff = predict_dts as i64 - packet.header().dts.0 as i64;
+                let predict_diff = predict_dts as i64 - packet_dts.0 as i64;
                 self.stats.set_predict_offset(predict_diff)
             }
         }
-
-        // INVARIANT: at this point we are guaranteed that, if there are
-        // packets in the queue, the seq of the incoming packet is less than
-        // back.seq + max_seq_gap
-
-        // expand queue to make space for new packet
-        if let Some(back) = self.queue.back() {
-            if packet.header().seq > back.seq {
-                // extend queue from back to make space for new packet
-                // this also allows for out of order packets
-                for seq in (back.seq + 1)..=packet.header().seq {
-                    self.queue.push_back(QueueEntry {
-                        seq,
-                        pts: None,
-                        consumed: SampleDuration::zero(),
-                        packet: None,
-                    })
-                }
-            }
-        } else {
-            // queue is empty, insert missing packet slot for the packet we are about to receive
-            self.queue.push_back(QueueEntry {
-                seq: packet.header().seq,
-                pts: None,
-                consumed: SampleDuration::zero(),
-                packet: None,
-            });
-        }
-
-        // INVARIANT: at this point queue is non-empty and contains an
-        // allocated slot for the packet we just received
-        let front_seq = self.queue.front().unwrap().seq;
-        let idx_for_packet = (packet.header().seq - front_seq) as usize;
-
-        let slot = self.queue.get_mut(idx_for_packet).unwrap();
-        assert!(slot.seq == packet.header().seq);
-        slot.pts = stream.adjust_pts(Timestamp::from_micros_lossy(packet.header().pts));
-        slot.packet = Some(packet);
     }
 
     pub fn fill_stream_buffer(&mut self, mut data: &mut [f32], pts: Timestamp) {
@@ -251,67 +183,21 @@ impl Receiver {
             return;
         };
 
+        let Some(packet) = stream.queue.pop_front() else {
+            // no packets yet
+            data.fill(0f32);
+            return;
+        };
+
+        let header_pts = Timestamp::from_micros_lossy(packet.header().pts);
+        let timing = stream.adjust_pts(header_pts)
+            .map(|stream_pts| Timing {
+                real: pts,
+                play: stream_pts,
+            });
+
+        /* TODO
         let real_ts_after_fill = pts.add(SampleDuration::from_buffer_offset(data.len()));
-
-        // sync up to stream if necessary:
-        if !stream.sync {
-            loop {
-                let Some(front) = self.queue.front_mut() else {
-                    // nothing at front of queue?
-                    data.fill(0f32);
-                    return;
-                };
-
-                let Some(front_pts) = front.pts else {
-                    // haven't received enough info to adjust pts of queue
-                    // front yet, just pop and ignore it
-                    self.queue.pop_front();
-                    // and output silence for this part:
-                    data.fill(0f32);
-                    return;
-                };
-
-                if pts > front_pts {
-                    // frame has already begun, we are late
-                    let late = pts.duration_since(front_pts);
-
-                    if late >= SampleDuration::ONE_PACKET {
-                        // we are late by more than a packet, skip to the next
-                        self.queue.pop_front();
-                        continue;
-                    }
-
-                    // partially consume this packet to sync up
-                    front.consumed = late;
-
-                    // we are synced
-                    stream.sync = true;
-                    self.stats.set_stream(StreamStatus::Sync);
-                    break;
-                }
-
-                // otherwise we are early
-                let early = front_pts.duration_since(pts);
-
-                if early >= SampleDuration::from_buffer_offset(data.len()) {
-                    // we are early by more than what was asked of us in this
-                    // call, fill with zeroes and return
-                    data.fill(0f32);
-                    return;
-                }
-
-                // we are early, but not an entire packet timing's early
-                // partially output some zeroes
-                let zero_count = early.as_buffer_offset();
-                data[0..zero_count].fill(0f32);
-                data = &mut data[zero_count..];
-
-                // then mark ourselves as synced and fall through to regular processing
-                stream.sync = true;
-                self.stats.set_stream(StreamStatus::Sync);
-                break;
-            }
-        }
 
         let mut stream_ts = None;
 
@@ -345,12 +231,10 @@ impl Receiver {
                 self.queue.pop_front();
             }
         }
+        */
 
-        if let Some(stream_ts) = stream_ts {
-            let rate = stream.rate_adjust.sample_rate(Timing {
-                real: real_ts_after_fill,
-                play: stream_ts,
-            });
+        if let Some(timing) = timing {
+            let rate = stream.rate_adjust.sample_rate(timing);
 
             let _ = stream.resampler.set_input_rate(rate.0);
 
@@ -360,12 +244,13 @@ impl Receiver {
                 self.stats.set_stream(StreamStatus::Sync);
             }
 
-            self.stats.set_audio_latency(real_ts_after_fill, stream_ts);
+            self.stats.set_audio_latency(timing.real, timing.play);
         }
 
-        self.stats.set_buffer_length(self.queue.iter()
-            .map(|entry| SampleDuration::ONE_PACKET.sub(entry.consumed))
-            .fold(SampleDuration::zero(), |cum, dur| cum.add(dur)));
+        // TODO
+        // self.stats.set_buffer_length(self.queue.iter()
+        //     .map(|entry| SampleDuration::ONE_PACKET.sub(entry.consumed))
+        //     .fold(SampleDuration::zero(), |cum, dur| cum.add(dur)));
     }
 }
 
