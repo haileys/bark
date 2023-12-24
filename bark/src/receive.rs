@@ -225,7 +225,7 @@ impl RateAdjust {
 
     fn adjusted_rate(&mut self, timing: Timing) -> Option<SampleRate> {
         // parameters, maybe these could be cli args?
-        let start_slew_threshold = Duration::from_micros(3000);
+        let start_slew_threshold = Duration::from_micros(2000);
         let stop_slew_threshold = Duration::from_micros(1000);
         let slew_target_duration = Duration::from_millis(500);
 
@@ -327,12 +327,11 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 let mut state = state.lock().unwrap();
 
                 let delay = output.delay().unwrap();
+                state.recv.stats.set_output_latency(delay);
 
                 let pts = time::now();
                 let pts = Timestamp::from_micros_lossy(pts);
                 let pts = pts.add(delay);
-
-                println!("delay = {delay:?}");
 
                 // this should be large enough for `write_audio` to process an
                 // entire packet with:

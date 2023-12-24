@@ -56,6 +56,7 @@ fn receiver(out: &mut dyn WriteColor, stats: &ReceiverStats) {
 
     time_field(out, "Audio", stats.audio_latency());
     time_field(out, "Buffer", stats.buffer_length());
+    time_field(out, "Output", stats.output_latency());
     time_field(out, "Network", stats.network_latency());
     time_field(out, "Predict", stats.predict_offset());
 }
