@@ -12,8 +12,8 @@ use bark_protocol::types::{SessionId, ReceiverId, TimePhase, AudioPacketHeader};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 
-use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER};
-use crate::audio::output::{Output, OutputOpt};
+use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
+use crate::audio::output::Output;
 use crate::resample::Resampler;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{time, stats};
@@ -315,7 +315,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         pub recv: Receiver,
     }
 
-    let output = Output::new(OutputOpt {
+    let output = Output::new(DeviceOpt {
         device: opt.output_device,
         period: opt.output_period
             .map(SampleDuration::from_frame_count)
@@ -323,7 +323,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         buffer: opt.output_buffer
             .map(SampleDuration::from_frame_count)
             .unwrap_or(DEFAULT_BUFFER),
-    }).map_err(RunError::OpenAudioOutput)?;
+    }).map_err(RunError::OpenAudioDevice)?;
 
     let state = Arc::new(Mutex::new(SharedState {
         recv: Receiver::new(),
