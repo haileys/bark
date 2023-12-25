@@ -25,9 +25,6 @@ pub enum RunError {
     NoDeviceAvailable,
     NoSupportedStreamConfig,
     OpenAudioDevice(audio::config::OpenError),
-    StreamConfigs(cpal::SupportedStreamConfigsError),
-    BuildStream(cpal::BuildStreamError),
-    Stream(cpal::PlayStreamError),
     Socket(std::io::Error),
 }
 

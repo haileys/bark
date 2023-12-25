@@ -12,7 +12,6 @@ bark-protocol = { workspace = true }
 alsa = "0.8.1"
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
-cpal = "0.15.2"
 derive_more = { workspace = true }
 libc = "0.2.147"
 nix = { version = "0.26.2", features = ["time", "socket", "net", "poll", "user", "hostname"], default-features = false }
