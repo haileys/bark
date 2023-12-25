@@ -1,4 +1,3 @@
-use core::cmp;
 use core::mem::size_of;
 use core::ops::Range;
 
@@ -7,8 +6,7 @@ use bytemuck::Zeroable;
 use crate::buffer::{AllocError, PacketBuffer};
 use crate::types::stats::node::NodeStats;
 use crate::types::stats::receiver::ReceiverStats;
-use crate::types::{self, AudioPacketHeader, Magic, SessionId, StatsReplyFlags};
-use crate::time::SampleDuration;
+use crate::types::{self, Magic, SessionId, StatsReplyFlags};
 
 pub const MAX_PACKET_SIZE: usize =
     size_of::<types::PacketHeader>() +
@@ -95,13 +93,10 @@ impl Audio {
         size_of::<types::AudioPacketHeader>() +
         size_of::<types::AudioPacketBuffer>();
 
-    pub fn write() -> Result<AudioWriter, AllocError> {
+    pub fn allocate() -> Result<Audio, AllocError> {
         let packet = Packet::allocate(Magic::AUDIO, Self::LENGTH)?;
 
-        Ok(AudioWriter {
-            packet: Audio(packet),
-            written: SampleDuration::zero(),
-        })
+        Ok(Audio(packet))
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
@@ -142,54 +137,6 @@ impl Audio {
         let header_size = size_of::<types::AudioPacketHeader>();
         let header_bytes = &mut self.0.as_bytes_mut()[0..header_size];
         bytemuck::from_bytes_mut(header_bytes)
-    }
-}
-
-#[derive(Debug)]
-pub struct AudioWriter {
-    packet: Audio,
-    written: SampleDuration,
-}
-
-impl AudioWriter {
-    pub fn length(&self) -> SampleDuration {
-        self.written
-    }
-
-    pub fn remaining(&self) -> SampleDuration {
-        SampleDuration::ONE_PACKET.sub(self.length())
-    }
-
-    pub fn remaining_buffer_mut(&mut self) -> &mut [f32] {
-        let offset = self.length().as_buffer_offset();
-        &mut self.packet.buffer_mut()[offset..]
-    }
-
-    pub fn valid_length(&self) -> bool {
-        self.remaining() == SampleDuration::zero()
-    }
-
-    pub fn write(&mut self, audio: &[f32]) -> SampleDuration {
-        let input_duration = SampleDuration::from_buffer_offset(audio.len());
-        let copy_duration = cmp::min(input_duration, self.remaining());
-
-        let copy_len = copy_duration.as_buffer_offset();
-        let source_buffer = &audio[0..copy_len];
-        let dest_buffer = &mut self.remaining_buffer_mut()[0..copy_len];
-        dest_buffer.copy_from_slice(source_buffer);
-
-        self.written = self.written.add(copy_duration);
-
-        copy_duration
-    }
-
-    pub fn finalize(mut self, header: AudioPacketHeader) -> Audio {
-        if !self.valid_length() {
-            panic!("into_audio_packet called on writer with invalid length");
-        }
-
-        *self.packet.header_mut() = header;
-        self.packet
     }
 }
 

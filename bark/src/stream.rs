@@ -74,11 +74,11 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
             loop {
                 // create new audio buffer
-                let mut audio = Audio::write()
+                let mut audio = Audio::allocate()
                     .expect("allocate Audio packet");
 
                 // read audio input
-                let timestamp = match input.read(audio.remaining_buffer_mut()) {
+                let timestamp = match input.read(audio.buffer_mut()) {
                     Ok(ts) => ts,
                     Err(e) => {
                         eprintln!("error reading audio input: {e}");
@@ -89,15 +89,14 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 let pts = timestamp.add(delay);
 
                 // write packet header
-                let packet = audio.finalize(AudioPacketHeader {
-                    sid: audio_header.sid,
-                    seq: audio_header.seq,
-                    pts: pts.to_micros_lossy(),
-                    dts: time::now(),
-                });
+                let header = audio.header_mut();
+                header.sid = audio_header.sid;
+                header.seq = audio_header.seq;
+                header.pts = pts.to_micros_lossy();
+                header.dts = time::now();
 
                 // send it
-                protocol.broadcast(packet.as_packet()).expect("broadcast");
+                protocol.broadcast(audio.as_packet()).expect("broadcast");
 
                 // reset header for next packet:
                 audio_header.seq += 1;
