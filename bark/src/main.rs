@@ -7,7 +7,6 @@ mod stats;
 mod stream;
 mod thread;
 mod time;
-mod util;
 
 use std::process::ExitCode;
 

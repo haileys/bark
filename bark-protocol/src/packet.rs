@@ -160,7 +160,7 @@ impl AudioWriter {
         SampleDuration::ONE_PACKET.sub(self.length())
     }
 
-    fn remaining_buffer_mut(&mut self) -> &mut [f32] {
+    pub fn remaining_buffer_mut(&mut self) -> &mut [f32] {
         let offset = self.length().as_buffer_offset();
         &mut self.packet.buffer_mut()[offset..]
     }
