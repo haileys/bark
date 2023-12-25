@@ -1,1 +1,4 @@
 multicast = "224.100.100.100:1530"
+
+[source.input]
+device = "pipewire:NODE=Bark"
