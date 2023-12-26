@@ -1,7 +1,6 @@
 mod audio;
 mod config;
 mod receive;
-mod resample;
 mod socket;
 mod stats;
 mod stream;

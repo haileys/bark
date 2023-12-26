@@ -2,9 +2,11 @@ use std::array;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bark_core::receive::queue::PacketQueue;
 use bytemuck::Zeroable;
 use structopt::StructOpt;
+
+use bark_core::receive::queue::PacketQueue;
+use bark_core::receive::resample::Resampler;
 
 use bark_protocol::{SampleRate, SAMPLES_PER_PACKET, FRAMES_PER_PACKET};
 use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
@@ -14,7 +16,6 @@ use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::output::Output;
-use crate::resample::Resampler;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{time, stats};
 use crate::RunError;
