@@ -23,11 +23,13 @@ enum Opt {
 #[derive(Debug, Error)]
 pub enum RunError {
     #[error("opening network socket: {0}")]
-    Listen(socket::ListenError),
+    Listen(#[from] socket::ListenError),
     #[error("opening audio device: {0}")]
-    OpenAudioDevice(audio::config::OpenError),
+    OpenAudioDevice(#[from] audio::config::OpenError),
     #[error("receiving from network: {0}")]
     Receive(std::io::Error),
+    #[error("opening encoder: {0}")]
+    OpenEncoder(#[from] bark_core::encode::NewEncoderError),
 }
 
 fn main() -> Result<(), ExitCode> {
