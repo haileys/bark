@@ -1,7 +1,10 @@
 use core::num::NonZeroU16;
 
-use bark_protocol::{packet::Audio, types::AudioPacketHeader, time::{SampleDuration, Timestamp}};
 use heapless::Deque;
+
+use bark_protocol::packet::Audio;
+use bark_protocol::types::AudioPacketHeader;
+use bark_protocol::time::{SampleDuration, Timestamp};
 
 use crate::consts::MAX_QUEUED_DECODE_SEGMENTS;
 
