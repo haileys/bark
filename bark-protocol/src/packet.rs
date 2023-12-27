@@ -3,10 +3,11 @@ use core::ops::Range;
 
 use bytemuck::Zeroable;
 
+use crate::SAMPLES_PER_PACKET;
 use crate::buffer::{AllocError, PacketBuffer};
 use crate::types::stats::node::NodeStats;
 use crate::types::stats::receiver::ReceiverStats;
-use crate::types::{self, Magic, SessionId, StatsReplyFlags};
+use crate::types::{self, Magic, SessionId, StatsReplyFlags, AudioPacketHeader};
 
 pub const MAX_PACKET_SIZE: usize =
     size_of::<types::PacketHeader>() +
@@ -89,14 +90,18 @@ pub enum PacketKind {
 pub struct Audio(Packet);
 
 impl Audio {
-    const HEADER_LENGTH: usize =
+    pub const HEADER_LENGTH: usize =
         size_of::<types::AudioPacketHeader>();
 
-    pub fn allocate(buffer_length: usize) -> Result<Audio, AllocError> {
-        let length = Self::HEADER_LENGTH + buffer_length;
-        let packet = Packet::allocate(Magic::AUDIO, length)?;
+    pub const MAX_BUFFER_LENGTH: usize =
+        size_of::<[f32; SAMPLES_PER_PACKET]>();
 
-        Ok(Audio(packet))
+    pub fn new(header: &AudioPacketHeader, data: &[u8]) -> Result<Audio, AllocError> {
+        let length = Self::HEADER_LENGTH + data.len();
+        let mut packet = Audio(Packet::allocate(Magic::AUDIO, length)?);
+        *packet.header_mut() = *header;
+        packet.buffer_bytes_mut().copy_from_slice(data);
+        Ok(packet)
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
