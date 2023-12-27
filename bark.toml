@@ -1,4 +1,0 @@
-multicast = "224.101.101.101:1530"
-
-[source.input]
-device = "pipewire:NODE=Bark"
