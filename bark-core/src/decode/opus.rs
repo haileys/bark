@@ -28,17 +28,10 @@ impl Display for OpusDecoder {
 impl Decode for OpusDecoder {
     fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
         let expected = out.len() / 2;
-        let length;
 
-        match bytes {
-            Some(bytes) => {
-                length = self.opus.decode_float(bytes, out, false)?;
-                log::debug!("opus decode: bytes={} -> frames={}", bytes.len(), length);
-            }
-            None => {
-                length = self.opus.decode_float(&[], out, true)?;
-                log::debug!("opus decode: correcting packet loss! frames={}", length);
-            }
+        let length = match bytes {
+            Some(bytes) => self.opus.decode_float(bytes, out, false)?,
+            None => self.opus.decode_float(&[], out, true)?,
         };
 
         if expected != length {

@@ -18,6 +18,7 @@ impl OpusEncoder {
 
         opus.set_inband_fec(true)?;
         opus.set_packet_loss_perc(50)?;
+        opus.set_bitrate(opus::Bitrate::Max)?;
 
         Ok(OpusEncoder { opus })
     }
@@ -35,10 +36,6 @@ impl Encode for OpusEncoder {
     }
 
     fn encode_packet(&mut self, samples: &[f32], out: &mut [u8]) -> Result<usize, EncodeError> {
-        let len = self.opus.encode_float(samples, out)?;
-
-        log::debug!("opus encode: frames={} -> bytes={}", samples.len() / 2, len);
-
-        Ok(len)
+        Ok(self.opus.encode_float(samples, out)?)
     }
 }
