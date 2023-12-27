@@ -47,13 +47,14 @@ impl Decoder {
         &self.decode as &dyn Display
     }
 
-    pub fn decode(&mut self, packet: &Audio, out: &mut SampleBuffer) -> Result<(), DecodeError> {
-        self.decode.decode_packet(packet.buffer_bytes(), out)
+    pub fn decode(&mut self, packet: Option<&Audio>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
+        let bytes = packet.map(|packet| packet.buffer_bytes());
+        self.decode.decode_packet(bytes, out)
     }
 }
 
 trait Decode: Display {
-    fn decode_packet(&mut self, bytes: &[u8], out: &mut SampleBuffer) -> Result<(), DecodeError>;
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError>;
 }
 
 enum DecodeFormat {
@@ -63,7 +64,7 @@ enum DecodeFormat {
 }
 
 impl Decode for DecodeFormat {
-    fn decode_packet(&mut self, bytes: &[u8], out: &mut SampleBuffer) -> Result<(), DecodeError> {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
         match self {
             DecodeFormat::S16LE(dec) => dec.decode_packet(bytes, out),
             DecodeFormat::F32LE(dec) => dec.decode_packet(bytes, out),

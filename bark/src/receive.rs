@@ -203,7 +203,7 @@ impl Receiver {
         // decode packet
         let mut decode_buffer: SampleBuffer = array::from_fn(|_| 0.0);
         if let Some(decoder) = stream.decoder.as_mut() {
-            match decoder.decode(&packet, &mut decode_buffer) {
+            match decoder.decode(Some(&packet), &mut decode_buffer) {
                 Ok(()) => {}
                 Err(e) => {
                     log::warn!("error in decoder, skipping packet: {e}");
