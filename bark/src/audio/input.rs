@@ -1,38 +1,42 @@
 use alsa::Direction;
 use alsa::pcm::PCM;
-use bark_protocol::CHANNELS;
+use bark_protocol::{CHANNELS, time::Timestamp};
 use bark_protocol::time::SampleDuration;
 use nix::errno::Errno;
 use thiserror::Error;
 
 use crate::audio::config::{self, DeviceOpt, OpenError};
+use crate::time;
 
-pub struct Output {
+pub struct Input {
     pcm: PCM,
 }
 
 #[derive(Debug, Error)]
-pub enum WriteAudioError {
+pub enum ReadAudioError {
     #[error("alsa: {0}")]
     Alsa(#[from] alsa::Error),
 }
 
-impl Output {
+impl Input {
     pub fn new(opt: DeviceOpt) -> Result<Self, OpenError> {
-        let pcm = config::open_pcm(&opt, Direction::Playback)?;
-        Ok(Output { pcm })
+        let pcm = config::open_pcm(&opt, Direction::Capture)?;
+        Ok(Input { pcm })
     }
 
-    pub fn write(&self, mut audio: &[f32]) -> Result<(), WriteAudioError> {
+    pub fn read(&self, mut audio: &mut [f32]) -> Result<Timestamp, ReadAudioError> {
+        let now = Timestamp::from_micros_lossy(time::now());
+        let timestamp = now.saturating_sub(self.delay()?);
+
         while audio.len() > 0 {
-            let n = self.write_partial(audio)?;
-            audio = &audio[n..];
+            let n = self.read_partial(audio)?;
+            audio = &mut audio[n..];
         }
 
-        Ok(())
+        Ok(timestamp)
     }
 
-    fn write_partial(&self, audio: &[f32]) -> Result<usize, WriteAudioError> {
+    fn read_partial(&self, audio: &mut [f32]) -> Result<usize, ReadAudioError> {
         let io = unsafe {
             // the checked versions of this function call
             // snd_pcm_hw_params_current which mallocs under the hood
@@ -41,7 +45,7 @@ impl Output {
 
         loop {
             // try to write audio
-            let err = match io.writei(audio) {
+            let err = match io.readi(audio) {
                 Ok(n) => {
                     return Ok(n * CHANNELS.0 as usize);
                 }
@@ -63,7 +67,7 @@ impl Output {
         }
     }
 
-    pub fn delay(&self) -> Result<SampleDuration, alsa::Error> {
+    fn delay(&self) -> Result<SampleDuration, alsa::Error> {
         let frames = self.pcm.delay()?;
         Ok(SampleDuration::from_frame_count(frames.try_into().unwrap()))
     }

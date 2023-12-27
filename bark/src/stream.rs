@@ -1,16 +1,16 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
-use cpal::InputCallbackInfo;
 use structopt::StructOpt;
 
-use bark_protocol::time::{SampleDuration, Timestamp};
+use bark_protocol::time::SampleDuration;
 use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
 use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
 
+use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
+use crate::audio::input::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
-use crate::{util, stats, time};
+use crate::{stats, time};
 use crate::RunError;
 
 #[derive(StructOpt)]
@@ -18,11 +18,17 @@ pub struct StreamOpt {
     #[structopt(flatten)]
     pub socket: SocketOpt,
 
-    #[structopt(
-        long,
-        env = "BARK_SOURCE_DEVICE",
-    )]
-    pub device: Option<String>,
+    /// Audio device name
+    #[structopt(long, env = "BARK_SOURCE_INPUT_DEVICE")]
+    pub input_device: Option<String>,
+
+    /// Size of discrete audio transfer buffer in frames
+    #[structopt(long, env = "BARK_SOURCE_INPUT_PERIOD")]
+    pub input_period: Option<u64>,
+
+    /// Size of decoded audio buffer in frames
+    #[structopt(long, env = "BARK_SOURCE_INPUT_BUFFER")]
+    pub input_buffer: Option<u64>,
 
     #[structopt(
         long,
@@ -33,16 +39,15 @@ pub struct StreamOpt {
 }
 
 pub fn run(opt: StreamOpt) -> Result<(), RunError> {
-    let host = cpal::default_host();
-
-    if let Some(device) = &opt.device {
-        crate::audio::env::set_source(device);
-    }
-
-    let device = host.default_input_device()
-        .ok_or(RunError::NoDeviceAvailable)?;
-
-    let config = util::config_for_device(&device)?;
+    let input = Input::new(DeviceOpt {
+        device: opt.input_device,
+        period: opt.input_period
+            .map(SampleDuration::from_frame_count)
+            .unwrap_or(DEFAULT_PERIOD),
+        buffer: opt.input_buffer
+            .map(SampleDuration::from_frame_count)
+            .unwrap_or(DEFAULT_BUFFER),
+    }).map_err(RunError::OpenAudioDevice)?;
 
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
@@ -62,72 +67,42 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
         dts: TimestampMicros(0),
     };
 
-    let mut audio_buffer = Audio::write()
-        .expect("allocate Audio packet");
+    std::thread::spawn({
+        let protocol = protocol.clone();
+        move || {
+            crate::thread::set_name("bark/audio");
 
-    let stream = device.build_input_stream(&config,
-        {
-            let protocol = Arc::clone(&protocol);
-            let mut initialized_thread = false;
-            move |mut data: &[f32], _: &InputCallbackInfo| {
-                if !initialized_thread {
-                    crate::thread::set_name("bark/audio");
-                    crate::thread::set_realtime_priority();
-                    initialized_thread = true;
-                }
+            loop {
+                // create new audio buffer
+                let mut audio = Audio::allocate()
+                    .expect("allocate Audio packet");
 
-                // assert data only contains complete frames:
-                assert!(data.len() % usize::from(bark_protocol::CHANNELS) == 0);
-
-                let mut timestamp = Timestamp::from_micros_lossy(time::now()).add(delay);
-
-                if audio_header.pts.0 == 0 {
-                    audio_header.pts = timestamp.to_micros_lossy();
-                }
-
-                while data.len() > 0 {
-                    // write some data to the waiting packet buffer
-                    let written = audio_buffer.write(data);
-
-                    // advance
-                    timestamp = timestamp.add(written);
-                    data = &data[written.as_buffer_offset()..];
-
-                    // if packet buffer is full, finalize it and send off the packet:
-                    if audio_buffer.valid_length() {
-                        // take packet writer and replace with new
-                        let audio = std::mem::replace(&mut audio_buffer,
-                            Audio::write().expect("allocate Audio packet"));
-
-                        // finalize packet
-                        let audio_packet = audio.finalize(AudioPacketHeader {
-                            dts: time::now(),
-                            ..audio_header
-                        });
-
-                        // send it
-                        protocol.broadcast(audio_packet.as_packet()).expect("broadcast");
-
-                        // reset header for next packet:
-                        audio_header.seq += 1;
-                        audio_header.pts = timestamp.to_micros_lossy();
+                // read audio input
+                let timestamp = match input.read(audio.buffer_mut()) {
+                    Ok(ts) => ts,
+                    Err(e) => {
+                        eprintln!("error reading audio input: {e}");
+                        break;
                     }
-                }
+                };
 
-                // if there is data waiting in the packet buffer at the end of the
-                // callback, the pts we just calculated is valid. if the packet is
-                // empty, reset the pts to 0. this signals the next callback to set
-                // pts to the current time when it fires.
-                if audio_buffer.length() == SampleDuration::zero() {
-                    audio_header.pts.0 = 0;
-                }
+                let pts = timestamp.add(delay);
+
+                // write packet header
+                let header = audio.header_mut();
+                header.sid = audio_header.sid;
+                header.seq = audio_header.seq;
+                header.pts = pts.to_micros_lossy();
+                header.dts = time::now();
+
+                // send it
+                protocol.broadcast(audio.as_packet()).expect("broadcast");
+
+                // reset header for next packet:
+                audio_header.seq += 1;
             }
-        },
-        move |err| {
-            eprintln!("stream error! {err:?}");
-        },
-        None
-    ).map_err(RunError::BuildStream)?;
+        }
+    });
 
     // set up t1 sender thread
     std::thread::spawn({
@@ -154,8 +129,6 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             }
         }
     });
-
-    stream.play().map_err(RunError::Stream)?;
 
     crate::thread::set_name("bark/network");
     crate::thread::set_realtime_priority();

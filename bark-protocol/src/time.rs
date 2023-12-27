@@ -27,6 +27,10 @@ impl Timestamp {
         Timestamp(self.0.checked_add(duration.0).unwrap())
     }
 
+    pub fn saturating_sub(&self, duration: SampleDuration) -> Timestamp {
+        Timestamp(self.0.saturating_sub(duration.0))
+    }
+
     pub fn saturating_duration_since(&self, other: Timestamp) -> SampleDuration {
         SampleDuration(self.0.saturating_sub(other.0))
     }

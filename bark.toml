@@ -1,5 +1,4 @@
 multicast = "224.100.100.100:1530"
 
-[audio]
-period = 120
-buffer = 240
+[source.input]
+device = "pipewire:NODE=Bark"

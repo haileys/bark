@@ -7,7 +7,6 @@ mod stats;
 mod stream;
 mod thread;
 mod time;
-mod util;
 
 use std::process::ExitCode;
 
@@ -25,10 +24,7 @@ pub enum RunError {
     Listen(socket::ListenError),
     NoDeviceAvailable,
     NoSupportedStreamConfig,
-    OpenAudioOutput(audio::output::OpenError),
-    StreamConfigs(cpal::SupportedStreamConfigsError),
-    BuildStream(cpal::BuildStreamError),
-    Stream(cpal::PlayStreamError),
+    OpenAudioDevice(audio::config::OpenError),
     Socket(std::io::Error),
 }
 
