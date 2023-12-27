@@ -47,6 +47,19 @@ pub struct AudioPacketHeader {
 
     // data timestamp - the stream's clock when packet is sent
     pub dts: TimestampMicros,
+
+    pub format: AudioPacketFormat,
+}
+
+/// This, regrettably, has to be a u64 to fill out `AudioPacketHeader` with
+/// no hidden padding. TODO this whole protocol tier needs a big rethink
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[repr(transparent)]
+pub struct AudioPacketFormat(u64);
+
+impl AudioPacketFormat {
+    pub const F32LE: Self = Self(1);
+    pub const S16LE: Self = Self(2);
 }
 
 pub type AudioPacketBuffer = [f32; SAMPLES_PER_PACKET];

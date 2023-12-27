@@ -5,7 +5,7 @@ use structopt::StructOpt;
 
 use bark_protocol::time::SampleDuration;
 use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
-use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
+use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase, AudioPacketFormat};
 
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::input::Input;
@@ -65,6 +65,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
         seq: 1,
         pts: TimestampMicros(0),
         dts: TimestampMicros(0),
+        format: AudioPacketFormat::F32LE,
     };
 
     std::thread::spawn({
@@ -89,11 +90,11 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 let pts = timestamp.add(delay);
 
                 // write packet header
-                let header = audio.header_mut();
-                header.sid = audio_header.sid;
-                header.seq = audio_header.seq;
-                header.pts = pts.to_micros_lossy();
-                header.dts = time::now();
+                *audio.header_mut() = AudioPacketHeader {
+                    pts: pts.to_micros_lossy(),
+                    dts: time::now(),
+                    ..audio_header
+                };
 
                 // send it
                 protocol.broadcast(audio.as_packet()).expect("broadcast");
