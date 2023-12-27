@@ -14,7 +14,7 @@ impl Decode for S16LEDecoder {
     fn decode_packet(&mut self, bytes: &[u8], out: &mut SampleBuffer) -> Result<(), DecodeError> {
         decode_packed(bytes, out, |bytes| {
             let input = i16::from_le_bytes(bytes);
-            let scale = (u16::MIN as f32).abs();
+            let scale = i16::MAX as f32;
             input as f32 / scale
         })
     }

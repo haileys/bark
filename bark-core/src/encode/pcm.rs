@@ -19,7 +19,7 @@ impl Encode for S16LEEncoder {
 
     fn encode_packet(&mut self, samples: &[f32], out: &mut [u8]) -> Result<usize, EncodeError> {
         encode_packed(samples, out, |sample| {
-            let scale = (u16::MIN as f32).abs();
+            let scale = i16::MAX as f32;
             let sample = sample.clamp(-1.0, 1.0) * scale;
             i16::to_le_bytes(sample as i16)
         })
