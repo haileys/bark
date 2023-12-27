@@ -24,6 +24,6 @@ socket2 = "0.5.3"
 static_assertions = "1.1.0"
 structopt = "0.3.26"
 termcolor = "1.2.0"
-thiserror = "1.0.51"
+thiserror = { workspace = true }
 toml = "0.7.6"
 xdg = "2.5.2"

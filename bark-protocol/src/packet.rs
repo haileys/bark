@@ -89,18 +89,18 @@ pub enum PacketKind {
 pub struct Audio(Packet);
 
 impl Audio {
-    const LENGTH: usize =
-        size_of::<types::AudioPacketHeader>() +
-        size_of::<types::AudioPacketBuffer>();
+    const HEADER_LENGTH: usize =
+        size_of::<types::AudioPacketHeader>();
 
-    pub fn allocate() -> Result<Audio, AllocError> {
-        let packet = Packet::allocate(Magic::AUDIO, Self::LENGTH)?;
+    pub fn allocate(buffer_length: usize) -> Result<Audio, AllocError> {
+        let length = Self::HEADER_LENGTH + buffer_length;
+        let packet = Packet::allocate(Magic::AUDIO, length)?;
 
         Ok(Audio(packet))
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
-        if packet.len() != Self::LENGTH {
+        if packet.len() <= Self::HEADER_LENGTH {
             return None;
         }
 
@@ -115,13 +115,13 @@ impl Audio {
         &self.0
     }
 
-    pub fn buffer(&self) -> &[f32] {
+    pub fn buffer_bytes(&self) -> &[u8] {
         let header_size = size_of::<types::AudioPacketHeader>();
         let buffer_bytes = &self.0.as_bytes()[header_size..];
         bytemuck::cast_slice(buffer_bytes)
     }
 
-    pub fn buffer_mut(&mut self) -> &mut [f32] {
+    pub fn buffer_bytes_mut(&mut self) -> &mut [u8] {
         let header_size = size_of::<types::AudioPacketHeader>();
         let buffer_bytes = &mut self.0.as_bytes_mut()[header_size..];
         bytemuck::cast_slice_mut(buffer_bytes)
@@ -148,7 +148,10 @@ impl Time {
     // that time packets experience as similar delay as possible to audio
     // packets for most accurate synchronisation, so we pad this packet out
     // to the same size as the audio packet
-    const LENGTH: usize = Audio::LENGTH;
+
+    // TODO fix this
+    // const LENGTH: usize = Audio::LENGTH;
+    const LENGTH: usize = size_of::<types::TimePacket>();
 
     // time packets are padded so that they are
     // the same length as audio packets:

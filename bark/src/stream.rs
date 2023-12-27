@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use bark_protocol::SAMPLES_PER_PACKET;
 use structopt::StructOpt;
 
 use bark_protocol::time::SampleDuration;
@@ -75,11 +76,14 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
             loop {
                 // create new audio buffer
-                let mut audio = Audio::allocate()
+                let buffer_bytes_length = core::mem::size_of::<f32>() * SAMPLES_PER_PACKET;
+                let mut audio = Audio::allocate(buffer_bytes_length)
                     .expect("allocate Audio packet");
 
+                let sample_buffer = bytemuck::cast_slice_mut(audio.buffer_bytes_mut());
+
                 // read audio input
-                let timestamp = match input.read(audio.buffer_mut()) {
+                let timestamp = match input.read(sample_buffer) {
                     Ok(ts) => ts,
                     Err(e) => {
                         log::error!("error reading audio input: {e}");

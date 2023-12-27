@@ -142,6 +142,7 @@ dependencies = [
  "derive_more",
  "heapless",
  "log",
+ "thiserror",
 ]
 
 [[package]]

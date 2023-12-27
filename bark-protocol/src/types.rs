@@ -53,7 +53,7 @@ pub struct AudioPacketHeader {
 
 /// This, regrettably, has to be a u64 to fill out `AudioPacketHeader` with
 /// no hidden padding. TODO this whole protocol tier needs a big rethink
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct AudioPacketFormat(u64);
 
