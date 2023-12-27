@@ -60,6 +60,7 @@ pub struct AudioPacketFormat(u64);
 impl AudioPacketFormat {
     pub const F32LE: Self = Self(1);
     pub const S16LE: Self = Self(2);
+    pub const OPUS: Self = Self(3);
 }
 
 pub type AudioPacketBuffer = [f32; SAMPLES_PER_PACKET];

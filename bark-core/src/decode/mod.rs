@@ -1,4 +1,5 @@
-mod pcm;
+pub mod opus;
+pub mod pcm;
 
 use core::fmt::Display;
 
@@ -12,12 +13,16 @@ use bark_protocol::SAMPLES_PER_PACKET;
 pub enum NewDecoderError {
     #[error("unknown format in audio header: {0:?}")]
     UnknownFormat(AudioPacketFormat),
+    #[error("opus codec error: {0}")]
+    Opus(#[from] ::opus::Error),
 }
 
 #[derive(Debug, Error)]
 pub enum DecodeError {
     #[error("wrong length: {length}, expected: {expected}")]
-    WrongLength { length: usize, expected: usize }
+    WrongLength { length: usize, expected: usize },
+    #[error("opus codec error: {0}")]
+    Opus(#[from] ::opus::Error),
 }
 
 pub struct Decoder {
@@ -31,6 +36,7 @@ impl Decoder {
         let decode = match header.format {
             AudioPacketFormat::S16LE => DecodeFormat::S16LE(pcm::S16LEDecoder),
             AudioPacketFormat::F32LE => DecodeFormat::F32LE(pcm::F32LEDecoder),
+            AudioPacketFormat::OPUS => DecodeFormat::Opus(opus::OpusDecoder::new()?),
             format => { return Err(NewDecoderError::UnknownFormat(format)) }
         };
 
@@ -41,25 +47,28 @@ impl Decoder {
         &self.decode as &dyn Display
     }
 
-    pub fn decode(&mut self, packet: &Audio, out: &mut SampleBuffer) -> Result<(), DecodeError> {
-        self.decode.decode_packet(packet.buffer_bytes(), out)
+    pub fn decode(&mut self, packet: Option<&Audio>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
+        let bytes = packet.map(|packet| packet.buffer_bytes());
+        self.decode.decode_packet(bytes, out)
     }
 }
 
 trait Decode: Display {
-    fn decode_packet(&mut self, bytes: &[u8], out: &mut SampleBuffer) -> Result<(), DecodeError>;
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError>;
 }
 
 enum DecodeFormat {
     S16LE(pcm::S16LEDecoder),
     F32LE(pcm::F32LEDecoder),
+    Opus(opus::OpusDecoder),
 }
 
 impl Decode for DecodeFormat {
-    fn decode_packet(&mut self, bytes: &[u8], out: &mut SampleBuffer) -> Result<(), DecodeError> {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
         match self {
             DecodeFormat::S16LE(dec) => dec.decode_packet(bytes, out),
             DecodeFormat::F32LE(dec) => dec.decode_packet(bytes, out),
+            DecodeFormat::Opus(dec) => dec.decode_packet(bytes, out),
         }
     }
 }
@@ -69,6 +78,7 @@ impl Display for DecodeFormat {
         match self {
             DecodeFormat::S16LE(dec) => dec.fmt(f),
             DecodeFormat::F32LE(dec) => dec.fmt(f),
+            DecodeFormat::Opus(dec) => dec.fmt(f),
         }
     }
 }

@@ -11,7 +11,7 @@ impl Display for S16LEDecoder {
 }
 
 impl Decode for S16LEDecoder {
-    fn decode_packet(&mut self, bytes: &[u8], out: &mut SampleBuffer) -> Result<(), DecodeError> {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
         decode_packed(bytes, out, |bytes| {
             let input = i16::from_le_bytes(bytes);
             let scale = i16::MAX as f32;
@@ -29,16 +29,23 @@ impl Display for F32LEDecoder {
 }
 
 impl Decode for F32LEDecoder {
-    fn decode_packet(&mut self, bytes: &[u8], out: &mut SampleBuffer) -> Result<(), DecodeError> {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
         decode_packed(bytes, out, f32::from_le_bytes)
     }
 }
 
 fn decode_packed<const N: usize>(
-    bytes: &[u8],
+    bytes: Option<&[u8]>,
     out: &mut SampleBuffer,
     func: impl Fn([u8; N]) -> f32,
 ) -> Result<(), DecodeError> {
+    let Some(bytes) = bytes else {
+        // PCM codecs have no packet loss correction
+        // just zero fill and return
+        out.fill(0.0);
+        return Ok(());
+    };
+
     check_length(bytes, out.len() * N)?;
 
     for (input, output) in bytes.chunks_exact(N).zip(out) {

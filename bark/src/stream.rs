@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bark_core::encode::Encode;
+use bark_core::encode::opus::OpusEncoder;
 use bark_core::encode::pcm::{S16LEEncoder, F32LEEncoder};
 use bark_protocol::SAMPLES_PER_PACKET;
 use structopt::StructOpt;
@@ -57,10 +58,9 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
         buffer: opt.input_buffer
             .map(SampleDuration::from_frame_count)
             .unwrap_or(DEFAULT_BUFFER),
-    }).map_err(RunError::OpenAudioDevice)?;
+    })?;
 
-    let socket = Socket::open(opt.socket)
-        .map_err(RunError::Listen)?;
+    let socket = Socket::open(opt.socket)?;
 
     let protocol = Arc::new(ProtocolSocket::new(socket));
 
@@ -70,9 +70,10 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let sid = generate_session_id();
     let node = stats::node::get();
 
-    let mut encoder = match opt.format {
-        config::Format::S16LE => Box::new(S16LEEncoder) as Box<dyn Encode>,
-        config::Format::F32LE => Box::new(F32LEEncoder) as Box<dyn Encode>,
+    let mut encoder: Box<dyn Encode> = match opt.format {
+        config::Format::S16LE => Box::new(S16LEEncoder),
+        config::Format::F32LE => Box::new(F32LEEncoder),
+        config::Format::Opus => Box::new(OpusEncoder::new()?),
     };
 
     log::info!("instantiated encoder: {}", encoder);
