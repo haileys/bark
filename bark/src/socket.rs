@@ -9,17 +9,23 @@ use structopt::StructOpt;
 
 use bark_protocol::buffer::PacketBuffer;
 use bark_protocol::packet::Packet;
+use thiserror::Error;
 
 // expedited forwarding - IP header field indicating that switches should
 // prioritise our packets for minimal delay
 const IPTOS_DSCP_EF: u32 = 0xb8;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ListenError {
+    #[error("creating socket: {0}")]
     Socket(io::Error),
+    #[error("setting SO_REUSEADDR: {0}")]
     SetReuseAddr(io::Error),
+    #[error("setting SO_BROADCAST: {0}")]
     SetBroadcast(io::Error),
+    #[error("binding {0}: {1}")]
     Bind(SocketAddrV4, io::Error),
+    #[error("joining multicast group {0}: {1}")]
     JoinMulticastGroup(Ipv4Addr, io::Error),
 }
 
@@ -111,7 +117,7 @@ fn bind_socket(bind: SocketAddrV4) -> Result<socket2::Socket, ListenError> {
     socket.set_reuse_address(true).map_err(ListenError::SetReuseAddr)?;
 
     if let Err(e) = socket.set_tos(IPTOS_DSCP_EF) {
-        eprintln!("warning: failed to set IPTOS_DSCP_EF: {e:?}");
+        log::warn!("failed to set IPTOS_DSCP_EF: {e:?}");
     }
 
     socket.bind(&bind.into()).map_err(|e| ListenError::Bind(bind, e))?;

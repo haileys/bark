@@ -54,7 +54,7 @@ impl Output {
                 | Errno::ESTRPIPE // stream suspended
                 | Errno::EINTR // interrupted syscall
                 => {
-                    eprintln!("recovering from error: {}", err.errno());
+                    log::warn!("recovering from error: {}", err.errno());
                     // try to recover
                     self.pcm.recover(err.errno() as i32, false)?;
                 }

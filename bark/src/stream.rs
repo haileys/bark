@@ -81,7 +81,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 let timestamp = match input.read(audio.buffer_mut()) {
                     Ok(ts) => ts,
                     Err(e) => {
-                        eprintln!("error reading audio input: {e}");
+                        log::error!("error reading audio input: {e}");
                         break;
                     }
                 };
@@ -141,7 +141,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                 // we should only ever receive an audio packet if another
                 // stream is present. check if it should take over
                 if audio.header().sid > sid {
-                    eprintln!("Peer {peer} has taken over stream, exiting");
+                    log::warn!("peer {peer} has taken over stream, exiting");
                     break;
                 }
             }

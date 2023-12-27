@@ -45,7 +45,7 @@ pub fn open_pcm(opt: &DeviceOpt, direction: Direction)
     }
 
     let (buffer, period) = pcm.get_params()?;
-    eprintln!("opened ALSA with buffer_size={buffer}, period_size={period}");
+    log::info!("opened ALSA with buffer_size={buffer}, period_size={period}");
 
     Ok(pcm)
 }

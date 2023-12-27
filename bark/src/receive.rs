@@ -17,7 +17,7 @@ use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::output::Output;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
-use crate::{time, stats};
+use crate::{time, stats, thread};
 use crate::RunError;
 
 pub struct Receiver {
@@ -120,7 +120,7 @@ impl Receiver {
 
         if new_stream {
             // new stream is taking over! switch over to it
-            println!("\nnew stream beginning");
+            log::info!("new stream beginning: sid={}", header.sid.0);
             self.stream = Some(Stream::new(header));
             self.stats.clear();
         }
@@ -333,7 +333,8 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     std::thread::spawn({
         let state = state.clone();
         move || {
-            crate::thread::set_name("bark/audio");
+            thread::set_name("bark/audio");
+            thread::set_realtime_priority();
 
             loop {
                 let mut state = state.lock().unwrap();
@@ -357,7 +358,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
                 match output.write(&buffer[0..duration.as_buffer_offset()]) {
                     Ok(()) => {}
                     Err(e) => {
-                        eprintln!("error playing audio: {e}");
+                        log::error!("error playing audio: {e}");
                         break;
                     }
                 };
@@ -370,11 +371,11 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
     let protocol = ProtocolSocket::new(socket);
 
-    crate::thread::set_name("bark/network");
-    crate::thread::set_realtime_priority();
+    thread::set_name("bark/network");
+    thread::set_realtime_priority();
 
     loop {
-        let (packet, peer) = protocol.recv_from().map_err(RunError::Socket)?;
+        let (packet, peer) = protocol.recv_from().map_err(RunError::Receive)?;
 
         match packet.parse() {
             Some(PacketKind::Time(mut time)) => {

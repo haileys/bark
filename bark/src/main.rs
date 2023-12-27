@@ -9,7 +9,9 @@ mod time;
 
 use std::process::ExitCode;
 
+use log::LevelFilter;
 use structopt::StructOpt;
+use thiserror::Error;
 
 #[derive(StructOpt)]
 enum Opt {
@@ -18,16 +20,19 @@ enum Opt {
     Stats(stats::StatsOpt),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum RunError {
+    #[error("opening network socket: {0}")]
     Listen(socket::ListenError),
-    NoDeviceAvailable,
-    NoSupportedStreamConfig,
+    #[error("opening audio device: {0}")]
     OpenAudioDevice(audio::config::OpenError),
-    Socket(std::io::Error),
+    #[error("receiving from network: {0}")]
+    Receive(std::io::Error),
 }
 
 fn main() -> Result<(), ExitCode> {
+    init_log();
+
     if let Some(config) = config::read() {
         config::load_into_env(&config);
     }
@@ -41,7 +46,23 @@ fn main() -> Result<(), ExitCode> {
     };
 
     result.map_err(|err| {
-        eprintln!("error: {err:?}");
+        log::error!("fatal: {err}");
         ExitCode::FAILURE
     })
+}
+
+fn init_log() {
+    env_logger::builder()
+        .format_timestamp_millis()
+        .filter_level(default_log_level())
+        .parse_default_env()
+        .init();
+}
+
+fn default_log_level() -> LevelFilter {
+    if cfg!(debug_assertions) {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    }
 }

@@ -46,7 +46,7 @@ pub fn run(opt: StatsOpt) -> Result<(), RunError> {
     let mut stats = HashMap::<PeerId, Entry>::new();
 
     loop {
-        let (reply, peer) = protocol.recv_from().map_err(RunError::Socket)?;
+        let (reply, peer) = protocol.recv_from().map_err(RunError::Receive)?;
 
         let Some(PacketKind::StatsReply(reply)) = reply.parse() else {
             continue;

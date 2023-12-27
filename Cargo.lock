@@ -119,6 +119,7 @@ dependencies = [
  "derive_more",
  "env_logger",
  "libc",
+ "log",
  "nix",
  "rand",
  "serde",

@@ -29,7 +29,7 @@ pub fn set_realtime_priority() {
         if !warned {
             let err = std::io::Error::last_os_error();
 
-            eprintln!("warning: failed to set realtime thread priority: {err}");
+            log::warn!("failed to set realtime thread priority: {err}");
 
             if err.kind() == ErrorKind::PermissionDenied {
                 let path = std::env::current_exe()
@@ -39,7 +39,7 @@ pub fn set_realtime_priority() {
                     .map(|path| path.as_str())
                     .unwrap_or("path/to/bark");
 
-                eprintln!("         fix by running: setcap cap_sys_nice=ep {path}")
+                log::warn!("fix by running: setcap cap_sys_nice=ep {path}")
             }
         }
     }
