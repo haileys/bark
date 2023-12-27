@@ -28,10 +28,10 @@ Note: if using Pipewire, you must have `pipewire-alsa` installed for this to wor
     3678    alsa_input.usb-046d_Logitech_Webcam_C930e-02.analog-stereo     PipeWire        s16le 2ch 44100Hz       SUSPENDED
     ```
 
-* Run the Bark server passing the name of the sink you created with the `--device` option:
+* Run the Bark server, setting the `--input-device` option with the ID of the source you just created according to your sound server's ALSA device name schema. For example, using Pipewire:
 
     ```sh-session
-    $ bark stream --multicast 224.100.100.100:1530 --device Bark
+    $ bark stream --multicast 224.100.100.100:1530 --device "pipewire:NODE=145"
     ```
 
 ### Running the receiver
@@ -44,10 +44,10 @@ Note: if using Pipewire, you must have `pipewire-alsa` installed for this to wor
     3676    alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo     PipeWire        s32le 2ch 44100Hz       RUNNING
     ```
 
-* Run the Bark receiver, passing the appropriate ALSA device name for your sound server:
+* Run the Bark receiver, passing the appropriate ALSA device name as in the example above:
 
     ```sh-session
-    $ bark receive --multicast 224.100.100.100:1530 --device pipewire:NODE=alsa_output.usb-Focusrite_Scarlett_Solo_USB-00.analog-stereo
+    $ bark receive --multicast 224.100.100.100:1530 --output-device "pipewire:NODE=3676"
     ```
 
 ### Configuration
