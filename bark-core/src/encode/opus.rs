@@ -17,6 +17,7 @@ impl OpusEncoder {
         )?;
 
         opus.set_inband_fec(true)?;
+        opus.set_packet_loss_perc(50)?;
 
         Ok(OpusEncoder { opus })
     }

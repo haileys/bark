@@ -36,7 +36,7 @@ impl Decode for OpusDecoder {
                 log::debug!("opus decode: bytes={} -> frames={}", bytes.len(), length);
             }
             None => {
-                length = self.opus.decode_float(&[], out, false)?;
+                length = self.opus.decode_float(&[], out, true)?;
                 log::debug!("opus decode: correcting packet loss! frames={}", length);
             }
         };
