@@ -171,21 +171,23 @@ impl Receiver {
             return SampleDuration::ONE_PACKET;
         };
 
-        let Some(packet) = stream.queue.pop_front() else {
-            // no packets yet
-            buffer[0..SAMPLES_PER_PACKET].fill(0f32);
-            return SampleDuration::ONE_PACKET;
-        };
+        // get next packet from queue, or None if missing (packet loss)
+        let packet = stream.queue.pop_front();
 
-        let header_pts = Timestamp::from_micros_lossy(packet.header().pts);
+        // calculate stream timing from packet timing info if present
+        let header_pts = packet.as_ref()
+            .map(|packet| packet.header().pts)
+            .map(Timestamp::from_micros_lossy);
 
-        let timing = stream.adjust_pts(header_pts)
-            .map(|stream_pts| Timing {
-                real: pts,
-                play: stream_pts,
-            });
+        let stream_pts = header_pts
+            .and_then(|header_pts| stream.adjust_pts(header_pts));
 
-        // adjust resampler rate based on packet timing info
+        let timing = stream_pts.map(|stream_pts| Timing {
+            real: pts,
+            play: stream_pts,
+        });
+
+        // adjust resampler rate based on stream timing info
         if let Some(timing) = timing {
             let rate = stream.rate_adjust.sample_rate(timing);
 
@@ -203,7 +205,7 @@ impl Receiver {
         // decode packet
         let mut decode_buffer: SampleBuffer = array::from_fn(|_| 0.0);
         if let Some(decoder) = stream.decoder.as_mut() {
-            match decoder.decode(Some(&packet), &mut decode_buffer) {
+            match decoder.decode(packet.as_ref(), &mut decode_buffer) {
                 Ok(()) => {}
                 Err(e) => {
                     log::warn!("error in decoder, skipping packet: {e}");
