@@ -3,7 +3,7 @@ use bark_protocol::time::SampleDuration;
 use thiserror::Error;
 
 pub const DEFAULT_PERIOD: SampleDuration = SampleDuration::from_frame_count(120);
-pub const DEFAULT_BUFFER: SampleDuration = SampleDuration::from_frame_count(240);
+pub const DEFAULT_BUFFER: SampleDuration = SampleDuration::from_frame_count(360);
 
 pub struct DeviceOpt {
     pub device: Option<String>,
