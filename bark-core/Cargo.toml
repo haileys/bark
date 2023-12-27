@@ -12,3 +12,4 @@ bytemuck = { workspace = true }
 derive_more = { workspace = true }
 heapless = { workspace = true }
 log = { workspace = true }
+thiserror = { workspace = true }

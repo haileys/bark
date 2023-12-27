@@ -1,6 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use bark_core::encode::Encode;
+use bark_core::encode::pcm::{S16LEEncoder, F32LEEncoder};
+use bark_protocol::SAMPLES_PER_PACKET;
 use structopt::StructOpt;
 
 use bark_protocol::time::SampleDuration;
@@ -10,7 +13,7 @@ use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, Receiv
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::input::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
-use crate::{stats, time};
+use crate::{stats, time, config};
 use crate::RunError;
 
 #[derive(StructOpt)]
@@ -36,6 +39,13 @@ pub struct StreamOpt {
         default_value = "20",
     )]
     pub delay_ms: u64,
+
+    #[structopt(
+        long,
+        env = "BARK_SOURCE_FORMAT",
+        default_value = "f32le",
+    )]
+    pub format: config::Format,
 }
 
 pub fn run(opt: StreamOpt) -> Result<(), RunError> {
@@ -60,11 +70,19 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let sid = generate_session_id();
     let node = stats::node::get();
 
+    let mut encoder = match opt.format {
+        config::Format::S16LE => Box::new(S16LEEncoder) as Box<dyn Encode>,
+        config::Format::F32LE => Box::new(F32LEEncoder) as Box<dyn Encode>,
+    };
+
+    log::info!("instantiated encoder: {}", encoder);
+
     let mut audio_header = AudioPacketHeader {
         sid,
         seq: 1,
         pts: TimestampMicros(0),
         dts: TimestampMicros(0),
+        format: encoder.header_format(),
     };
 
     std::thread::spawn({
@@ -73,12 +91,10 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             crate::thread::set_name("bark/audio");
 
             loop {
-                // create new audio buffer
-                let mut audio = Audio::allocate()
-                    .expect("allocate Audio packet");
+                let mut sample_buffer = [0f32; SAMPLES_PER_PACKET];
 
                 // read audio input
-                let timestamp = match input.read(audio.buffer_mut()) {
+                let timestamp = match input.read(&mut sample_buffer) {
                     Ok(ts) => ts,
                     Err(e) => {
                         log::error!("error reading audio input: {e}");
@@ -86,14 +102,28 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                     }
                 };
 
+                // encode audio
+                let mut encode_buffer = [0; Audio::MAX_BUFFER_LENGTH];
+                let encoded_data = match encoder.encode_packet(&sample_buffer, &mut encode_buffer) {
+                    Ok(size) => &encode_buffer[0..size],
+                    Err(e) => {
+                        log::error!("error encoding audio: {e}");
+                        break;
+                    }
+                };
+
+                // assemble new packet header
                 let pts = timestamp.add(delay);
 
-                // write packet header
-                let header = audio.header_mut();
-                header.sid = audio_header.sid;
-                header.seq = audio_header.seq;
-                header.pts = pts.to_micros_lossy();
-                header.dts = time::now();
+                let header = AudioPacketHeader {
+                    pts: pts.to_micros_lossy(),
+                    dts: time::now(),
+                    ..audio_header
+                };
+
+                // allocate new audio packet and copy encoded data in
+                let audio = Audio::new(&header, encoded_data)
+                    .expect("allocate Audio packet");
 
                 // send it
                 protocol.broadcast(audio.as_packet()).expect("broadcast");
@@ -183,7 +213,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     Ok(())
 }
 
-pub fn generate_session_id() -> SessionId {
+fn generate_session_id() -> SessionId {
     use nix::sys::time::TimeValLike;
 
     let timespec = nix::time::clock_gettime(nix::time::ClockId::CLOCK_REALTIME)

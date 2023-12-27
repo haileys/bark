@@ -3,10 +3,11 @@ use core::ops::Range;
 
 use bytemuck::Zeroable;
 
+use crate::SAMPLES_PER_PACKET;
 use crate::buffer::{AllocError, PacketBuffer};
 use crate::types::stats::node::NodeStats;
 use crate::types::stats::receiver::ReceiverStats;
-use crate::types::{self, Magic, SessionId, StatsReplyFlags};
+use crate::types::{self, Magic, SessionId, StatsReplyFlags, AudioPacketHeader};
 
 pub const MAX_PACKET_SIZE: usize =
     size_of::<types::PacketHeader>() +
@@ -89,18 +90,22 @@ pub enum PacketKind {
 pub struct Audio(Packet);
 
 impl Audio {
-    const LENGTH: usize =
-        size_of::<types::AudioPacketHeader>() +
-        size_of::<types::AudioPacketBuffer>();
+    pub const HEADER_LENGTH: usize =
+        size_of::<types::AudioPacketHeader>();
 
-    pub fn allocate() -> Result<Audio, AllocError> {
-        let packet = Packet::allocate(Magic::AUDIO, Self::LENGTH)?;
+    pub const MAX_BUFFER_LENGTH: usize =
+        size_of::<[f32; SAMPLES_PER_PACKET]>();
 
-        Ok(Audio(packet))
+    pub fn new(header: &AudioPacketHeader, data: &[u8]) -> Result<Audio, AllocError> {
+        let length = Self::HEADER_LENGTH + data.len();
+        let mut packet = Audio(Packet::allocate(Magic::AUDIO, length)?);
+        *packet.header_mut() = *header;
+        packet.buffer_bytes_mut().copy_from_slice(data);
+        Ok(packet)
     }
 
     pub fn parse(packet: Packet) -> Option<Self> {
-        if packet.len() != Self::LENGTH {
+        if packet.len() <= Self::HEADER_LENGTH {
             return None;
         }
 
@@ -115,13 +120,13 @@ impl Audio {
         &self.0
     }
 
-    pub fn buffer(&self) -> &[f32] {
+    pub fn buffer_bytes(&self) -> &[u8] {
         let header_size = size_of::<types::AudioPacketHeader>();
         let buffer_bytes = &self.0.as_bytes()[header_size..];
         bytemuck::cast_slice(buffer_bytes)
     }
 
-    pub fn buffer_mut(&mut self) -> &mut [f32] {
+    pub fn buffer_bytes_mut(&mut self) -> &mut [u8] {
         let header_size = size_of::<types::AudioPacketHeader>();
         let buffer_bytes = &mut self.0.as_bytes_mut()[header_size..];
         bytemuck::cast_slice_mut(buffer_bytes)
@@ -148,7 +153,10 @@ impl Time {
     // that time packets experience as similar delay as possible to audio
     // packets for most accurate synchronisation, so we pad this packet out
     // to the same size as the audio packet
-    const LENGTH: usize = Audio::LENGTH;
+
+    // TODO fix this
+    // const LENGTH: usize = Audio::LENGTH;
+    const LENGTH: usize = size_of::<types::TimePacket>();
 
     // time packets are padded so that they are
     // the same length as audio packets:

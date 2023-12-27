@@ -2,6 +2,7 @@ use std::array;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use bark_core::decode::{Decoder, SampleBuffer};
 use bytemuck::Zeroable;
 use structopt::StructOpt;
 
@@ -27,25 +28,40 @@ pub struct Receiver {
 
 struct Stream {
     sid: SessionId,
-    resampler: Resampler,
-    rate_adjust: RateAdjust,
     latency: Aggregate<Duration>,
     clock_delta: Aggregate<ClockDelta>,
     queue: PacketQueue,
+    /// None indicates error creating decoder, we cannot decode this stream
+    decoder: Option<Decoder>,
+    resampler: Resampler,
+    rate_adjust: RateAdjust,
 }
 
 impl Stream {
     pub fn new(header: &AudioPacketHeader) -> Self {
-        let resampler = Resampler::new();
         let queue = PacketQueue::new(header);
+
+        let decoder = match Decoder::new(header) {
+            Ok(dec) => {
+                log::info!("instantiated decoder for new stream: {}", dec.describe());
+                Some(dec)
+            }
+            Err(err) => {
+                log::error!("error creating decoder for new stream: {err}");
+                None
+            }
+        };
+
+        let resampler = Resampler::new();
 
         Stream {
             sid: header.sid,
-            resampler,
-            rate_adjust: RateAdjust::new(),
             latency: Aggregate::new(),
             clock_delta: Aggregate::new(),
             queue,
+            decoder,
+            resampler,
+            rate_adjust: RateAdjust::new(),
         }
     }
 
@@ -169,6 +185,7 @@ impl Receiver {
                 play: stream_pts,
             });
 
+        // adjust resampler rate based on packet timing info
         if let Some(timing) = timing {
             let rate = stream.rate_adjust.sample_rate(timing);
 
@@ -183,11 +200,25 @@ impl Receiver {
             self.stats.set_audio_latency(timing.real, timing.play);
         }
 
-        let resample = stream.resampler.process_interleaved(packet.buffer(), buffer)
+        // decode packet
+        let mut decode_buffer: SampleBuffer = array::from_fn(|_| 0.0);
+        if let Some(decoder) = stream.decoder.as_mut() {
+            match decoder.decode(&packet, &mut decode_buffer) {
+                Ok(()) => {}
+                Err(e) => {
+                    log::warn!("error in decoder, skipping packet: {e}");
+                    decode_buffer.fill(0.0);
+                }
+            }
+        }
+
+        // resample decoded audio
+        let resample = stream.resampler.process_interleaved(&decode_buffer, buffer)
             .expect("resample error!");
 
-        assert_eq!(resample.input_read.as_buffer_offset(), packet.buffer().len());
+        assert_eq!(resample.input_read.as_buffer_offset(), decode_buffer.len());
 
+        // report stats and return
         self.stats.set_buffer_length(
             SampleDuration::from_frame_count(
                 (FRAMES_PER_PACKET * stream.queue.len()).try_into().unwrap()));
