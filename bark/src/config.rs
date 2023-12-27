@@ -15,12 +15,14 @@ pub struct Config {
 
 #[derive(Deserialize, Default)]
 pub struct Source {
+    #[serde(default)]
     input: Device,
     delay_ms: Option<u64>,
 }
 
 #[derive(Deserialize, Default)]
 pub struct Receive {
+    #[serde(default)]
     output: Device,
 }
 
