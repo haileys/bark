@@ -32,8 +32,8 @@ impl Decode for OpusDecoder {
         let expected = out.len();
 
         let frames = match bytes {
-            Some(bytes) => self.opus.decode_float(bytes, audio::to_interleaved_mut(out), false)?,
-            None => self.opus.decode_float(&[], audio::to_interleaved_mut(out), true)?,
+            Some(bytes) => self.opus.decode_float(bytes, audio::as_interleaved_mut(out), false)?,
+            None => self.opus.decode_float(&[], audio::as_interleaved_mut(out), true)?,
         };
 
         if expected != frames {

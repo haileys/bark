@@ -45,7 +45,7 @@ impl Input {
 
         loop {
             // try to write audio
-            let err = match io.readi(audio::to_interleaved_mut(audio)) {
+            let err = match io.readi(audio::as_interleaved_mut(audio)) {
                 Ok(n) => { return Ok(n) }
                 Err(e) => e,
             };

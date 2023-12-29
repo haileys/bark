@@ -41,7 +41,7 @@ fn decode_packed<const N: usize>(
     out: &mut FrameBuffer,
     func: impl Fn([u8; N]) -> f32,
 ) -> Result<(), DecodeError> {
-    let out_samples = audio::to_interleaved_mut(out);
+    let out_samples = audio::as_interleaved_mut(out);
 
     let Some(bytes) = bytes else {
         // PCM codecs have no packet loss correction

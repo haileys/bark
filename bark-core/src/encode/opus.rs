@@ -38,6 +38,6 @@ impl Encode for OpusEncoder {
     }
 
     fn encode_packet(&mut self, samples: &[Frame], out: &mut [u8]) -> Result<usize, EncodeError> {
-        Ok(self.opus.encode_float(audio::to_interleaved(samples), out)?)
+        Ok(self.opus.encode_float(audio::as_interleaved(samples), out)?)
     }
 }

@@ -41,7 +41,7 @@ impl Output {
 
         loop {
             // try to write audio
-            let err = match io.writei(audio::to_interleaved(audio)) {
+            let err = match io.writei(audio::as_interleaved(audio)) {
                 Ok(n) => { return Ok(n) },
                 Err(e) => e,
             };

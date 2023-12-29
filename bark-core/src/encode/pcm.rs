@@ -51,7 +51,7 @@ fn encode_packed<const N: usize>(
     out: &mut [u8],
     func: impl Fn(f32) -> [u8; N],
 ) -> Result<usize, EncodeError> {
-    let samples = audio::to_interleaved(frames);
+    let samples = audio::as_interleaved(frames);
     let out = check_length(out, samples.len() * N)?;
 
     for (output, input) in out.chunks_exact_mut(N).zip(samples) {
