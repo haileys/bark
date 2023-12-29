@@ -2,7 +2,7 @@ use std::ffi::{c_void, c_int, CStr};
 use std::fmt::Debug;
 use std::ptr;
 
-use bark_protocol::time::SampleDuration;
+use crate::audio::{Frame, FrameCount};
 
 use self::ffi::speex_resampler_strerror;
 
@@ -46,10 +46,8 @@ pub struct Resampler {
 unsafe impl Send for Resampler {}
 
 pub struct ProcessResult {
-    /// per-channel
-    pub input_read: SampleDuration,
-    /// per-channel
-    pub output_written: SampleDuration,
+    pub input_read: FrameCount,
+    pub output_written: FrameCount,
 }
 
 impl Resampler {
@@ -93,20 +91,16 @@ impl Resampler {
         Ok(())
     }
 
-    pub fn process_interleaved(&mut self, input: &[f32], output: &mut [f32])
+    pub fn process(&mut self, input: &[Frame], output: &mut [Frame])
         -> Result<ProcessResult, SpeexError>
     {
-        // speex API takes frame count:
-        let input_len = input.len() / usize::from(bark_protocol::CHANNELS);
-        let output_len = output.len() / usize::from(bark_protocol::CHANNELS);
-
         // usize could technically be 64 bit, speex only takes u32 sizes,
         // we don't want to panic or truncate, so let's just pick a reasonable
         // length and cap input and output since the API allows us to.
         // i'm going to say a reasonable length for a single call is 1<<20.
         let max_reasonable_len = 1 << 20;
-        let input_len = std::cmp::min(input_len, max_reasonable_len);
-        let output_len = std::cmp::min(output_len, max_reasonable_len);
+        let input_len = std::cmp::min(input.len(), max_reasonable_len);
+        let output_len = std::cmp::min(output.len(), max_reasonable_len);
 
         let mut input_len = u32::try_from(input_len).unwrap();
         let mut output_len = u32::try_from(output_len).unwrap();
@@ -114,9 +108,10 @@ impl Resampler {
         let err = unsafe {
             ffi::speex_resampler_process_interleaved_float(
                 self.ptr.0,
-                input.as_ptr(),
+                input.as_ptr().cast(),
+                // speex API takes frame count already:
                 &mut input_len,
-                output.as_mut_ptr(),
+                output.as_mut_ptr().cast(),
                 &mut output_len,
             )
         };
@@ -126,8 +121,8 @@ impl Resampler {
         }
 
         Ok(ProcessResult {
-            input_read: SampleDuration::from_frame_count(u64::from(input_len)),
-            output_written: SampleDuration::from_frame_count(u64::from(output_len)),
+            input_read: FrameCount(usize::try_from(input_len).unwrap()),
+            output_written: FrameCount(usize::try_from(output_len).unwrap()),
         })
     }
 }

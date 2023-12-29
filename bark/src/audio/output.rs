@@ -1,6 +1,6 @@
 use alsa::Direction;
 use alsa::pcm::PCM;
-use bark_protocol::CHANNELS;
+use bark_core::audio::{Frame, self};
 use bark_protocol::time::SampleDuration;
 use nix::errno::Errno;
 use thiserror::Error;
@@ -23,7 +23,7 @@ impl Output {
         Ok(Output { pcm })
     }
 
-    pub fn write(&self, mut audio: &[f32]) -> Result<(), WriteAudioError> {
+    pub fn write(&self, mut audio: &[Frame]) -> Result<(), WriteAudioError> {
         while audio.len() > 0 {
             let n = self.write_partial(audio)?;
             audio = &audio[n..];
@@ -32,7 +32,7 @@ impl Output {
         Ok(())
     }
 
-    fn write_partial(&self, audio: &[f32]) -> Result<usize, WriteAudioError> {
+    fn write_partial(&self, audio: &[Frame]) -> Result<usize, WriteAudioError> {
         let io = unsafe {
             // the checked versions of this function call
             // snd_pcm_hw_params_current which mallocs under the hood
@@ -41,10 +41,8 @@ impl Output {
 
         loop {
             // try to write audio
-            let err = match io.writei(audio) {
-                Ok(n) => {
-                    return Ok(n * CHANNELS.0 as usize);
-                }
+            let err = match io.writei(audio::to_interleaved(audio)) {
+                Ok(n) => { return Ok(n) },
                 Err(e) => e,
             };
 

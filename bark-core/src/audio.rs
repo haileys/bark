@@ -7,6 +7,10 @@ pub type Sample = f32;
 #[repr(C)]
 pub struct Frame(pub Sample, pub Sample);
 
+#[derive(Copy, Clone, Debug)]
+#[repr(transparent)]
+pub struct FrameCount(pub usize);
+
 pub fn from_interleaved(samples: &[Sample]) -> &[Frame] {
     // ensure samples contains whole frames only
     assert_eq!(0, samples.len() % usize::from(CHANNELS));
