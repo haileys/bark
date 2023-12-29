@@ -2,14 +2,15 @@ use std::array;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bark_core::decode::{Decoder, SampleBuffer};
+use bark_core::audio::Frame;
+use bark_core::decode::{Decoder, FrameBuffer};
 use bytemuck::Zeroable;
 use structopt::StructOpt;
 
 use bark_core::receive::queue::PacketQueue;
 use bark_core::receive::resample::Resampler;
 
-use bark_protocol::{SampleRate, SAMPLES_PER_PACKET, FRAMES_PER_PACKET};
+use bark_protocol::{SampleRate, FRAMES_PER_PACKET};
 use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
 use bark_protocol::types::{SessionId, ReceiverId, TimePhase, AudioPacketHeader};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
@@ -163,12 +164,12 @@ impl Receiver {
         }
     }
 
-    pub fn write_audio(&mut self, buffer: &mut [f32], pts: Timestamp) -> SampleDuration {
+    pub fn write_audio(&mut self, buffer: &mut [Frame], pts: Timestamp) -> usize {
         // get stream start timing information:
         let Some(stream) = self.stream.as_mut() else {
             // stream hasn't started, just fill buffer with silence and return
-            buffer[0..SAMPLES_PER_PACKET].fill(0f32);
-            return SampleDuration::ONE_PACKET;
+            buffer[0..FRAMES_PER_PACKET].fill(Frame::zeroed());
+            return FRAMES_PER_PACKET;
         };
 
         // get next packet from queue, or None if missing (packet loss)
@@ -203,29 +204,29 @@ impl Receiver {
         }
 
         // decode packet
-        let mut decode_buffer: SampleBuffer = array::from_fn(|_| 0.0);
+        let mut decode_buffer: FrameBuffer = array::from_fn(|_| Frame::zeroed());
         if let Some(decoder) = stream.decoder.as_mut() {
             match decoder.decode(packet.as_ref(), &mut decode_buffer) {
                 Ok(()) => {}
                 Err(e) => {
                     log::warn!("error in decoder, skipping packet: {e}");
-                    decode_buffer.fill(0.0);
+                    decode_buffer.fill(Frame::zeroed());
                 }
             }
         }
 
         // resample decoded audio
-        let resample = stream.resampler.process_interleaved(&decode_buffer, buffer)
+        let resample = stream.resampler.process(&decode_buffer, buffer)
             .expect("resample error!");
 
-        assert_eq!(resample.input_read.as_buffer_offset(), decode_buffer.len());
+        assert_eq!(resample.input_read.0, decode_buffer.len());
 
         // report stats and return
         self.stats.set_buffer_length(
             SampleDuration::from_frame_count(
                 (FRAMES_PER_PACKET * stream.queue.len()).try_into().unwrap()));
 
-        resample.output_written
+        resample.output_written.0
     }
 }
 
@@ -381,14 +382,14 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
                 // this should be large enough for `write_audio` to process an
                 // entire packet with:
-                let mut buffer = [0f32; SAMPLES_PER_PACKET * 2];
-                let duration = state.recv.write_audio(&mut buffer, pts);
+                let mut buffer = [Frame::zeroed(); FRAMES_PER_PACKET * 2];
+                let count = state.recv.write_audio(&mut buffer, pts);
 
                 // drop lock before calling `Output::write` (blocking!)
                 drop(state);
 
                 // send audio to ALSA
-                match output.write(&buffer[0..duration.as_buffer_offset()]) {
+                match output.write(&buffer[0..count]) {
                     Ok(()) => {}
                     Err(e) => {
                         log::error!("error playing audio: {e}");

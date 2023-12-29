@@ -2,7 +2,9 @@ use core::fmt::{self, Display};
 
 use bark_protocol::SAMPLE_RATE;
 
-use super::{Decode, DecodeError, SampleBuffer};
+use crate::audio;
+
+use super::{Decode, DecodeError, FrameBuffer};
 
 pub struct OpusDecoder {
     opus: opus::Decoder,
@@ -26,16 +28,16 @@ impl Display for OpusDecoder {
 }
 
 impl Decode for OpusDecoder {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
-        let expected = out.len() / 2;
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
+        let expected = out.len();
 
-        let length = match bytes {
-            Some(bytes) => self.opus.decode_float(bytes, out, false)?,
-            None => self.opus.decode_float(&[], out, true)?,
+        let frames = match bytes {
+            Some(bytes) => self.opus.decode_float(bytes, audio::as_interleaved_mut(out), false)?,
+            None => self.opus.decode_float(&[], audio::as_interleaved_mut(out), true)?,
         };
 
-        if expected != length {
-            return Err(DecodeError::WrongLength { length, expected });
+        if expected != frames {
+            return Err(DecodeError::WrongFrameCount { frames, expected });
         }
 
         Ok(())

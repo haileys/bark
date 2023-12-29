@@ -6,6 +6,8 @@ use core::fmt::Display;
 use bark_protocol::types::AudioPacketFormat;
 use thiserror::Error;
 
+use crate::audio::Frame;
+
 #[derive(Debug, Error)]
 pub enum NewEncoderError {
     #[error("opus codec error: {0}")]
@@ -22,5 +24,5 @@ pub enum EncodeError {
 
 pub trait Encode: Display + Send {
     fn header_format(&self) -> AudioPacketFormat;
-    fn encode_packet(&mut self, samples: &[f32], out: &mut [u8]) -> Result<usize, EncodeError>;
+    fn encode_packet(&mut self, frames: &[Frame], out: &mut [u8]) -> Result<usize, EncodeError>;
 }

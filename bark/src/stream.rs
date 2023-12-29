@@ -1,10 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use bark_core::audio::Frame;
 use bark_core::encode::Encode;
 use bark_core::encode::opus::OpusEncoder;
 use bark_core::encode::pcm::{S16LEEncoder, F32LEEncoder};
-use bark_protocol::SAMPLES_PER_PACKET;
+use bark_protocol::FRAMES_PER_PACKET;
+use bytemuck::Zeroable;
 use structopt::StructOpt;
 
 use bark_protocol::time::SampleDuration;
@@ -92,10 +94,10 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             crate::thread::set_name("bark/audio");
 
             loop {
-                let mut sample_buffer = [0f32; SAMPLES_PER_PACKET];
+                let mut audio_buffer = [Frame::zeroed(); FRAMES_PER_PACKET];
 
                 // read audio input
-                let timestamp = match input.read(&mut sample_buffer) {
+                let timestamp = match input.read(&mut audio_buffer) {
                     Ok(ts) => ts,
                     Err(e) => {
                         log::error!("error reading audio input: {e}");
@@ -105,7 +107,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
 
                 // encode audio
                 let mut encode_buffer = [0; Audio::MAX_BUFFER_LENGTH];
-                let encoded_data = match encoder.encode_packet(&sample_buffer, &mut encode_buffer) {
+                let encoded_data = match encoder.encode_packet(&audio_buffer, &mut encode_buffer) {
                     Ok(size) => &encode_buffer[0..size],
                     Err(e) => {
                         log::error!("error encoding audio: {e}");

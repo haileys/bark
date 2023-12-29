@@ -3,11 +3,13 @@ pub mod pcm;
 
 use core::fmt::Display;
 
-use bark_protocol::packet::Audio;
 use thiserror::Error;
 
+use bark_protocol::FRAMES_PER_PACKET;
+use bark_protocol::packet::Audio;
 use bark_protocol::types::{AudioPacketHeader, AudioPacketFormat};
-use bark_protocol::SAMPLES_PER_PACKET;
+
+use crate::audio::Frame;
 
 #[derive(Debug, Error)]
 pub enum NewDecoderError {
@@ -19,8 +21,10 @@ pub enum NewDecoderError {
 
 #[derive(Debug, Error)]
 pub enum DecodeError {
-    #[error("wrong length: {length}, expected: {expected}")]
+    #[error("wrong byte length: {length}, expected: {expected}")]
     WrongLength { length: usize, expected: usize },
+    #[error("wrong frame count: {frames}, expected: {expected}")]
+    WrongFrameCount { frames: usize, expected: usize },
     #[error("opus codec error: {0}")]
     Opus(#[from] ::opus::Error),
 }
@@ -29,7 +33,7 @@ pub struct Decoder {
     decode: DecodeFormat,
 }
 
-pub type SampleBuffer = [f32; SAMPLES_PER_PACKET];
+pub type FrameBuffer = [Frame; FRAMES_PER_PACKET];
 
 impl Decoder {
     pub fn new(header: &AudioPacketHeader) -> Result<Self, NewDecoderError> {
@@ -47,14 +51,14 @@ impl Decoder {
         &self.decode as &dyn Display
     }
 
-    pub fn decode(&mut self, packet: Option<&Audio>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
+    pub fn decode(&mut self, packet: Option<&Audio>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
         let bytes = packet.map(|packet| packet.buffer_bytes());
         self.decode.decode_packet(bytes, out)
     }
 }
 
 trait Decode: Display {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError>;
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError>;
 }
 
 enum DecodeFormat {
@@ -64,7 +68,7 @@ enum DecodeFormat {
 }
 
 impl Decode for DecodeFormat {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut SampleBuffer) -> Result<(), DecodeError> {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
         match self {
             DecodeFormat::S16LE(dec) => dec.decode_packet(bytes, out),
             DecodeFormat::F32LE(dec) => dec.decode_packet(bytes, out),
