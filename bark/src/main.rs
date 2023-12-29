@@ -14,6 +14,7 @@ use structopt::StructOpt;
 use thiserror::Error;
 
 #[derive(StructOpt)]
+#[structopt(version = version())]
 enum Opt {
     Stream(stream::StreamOpt),
     Receive(receive::ReceiveOpt),
@@ -66,5 +67,12 @@ fn default_log_level() -> LevelFilter {
         LevelFilter::Debug
     } else {
         LevelFilter::Info
+    }
+}
+
+const fn version() -> &'static str {
+    match option_env!("BARK_PKG_VERSION") {
+        Some(ver) => ver,
+        None => env!("CARGO_PKG_VERSION"),
     }
 }
