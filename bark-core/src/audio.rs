@@ -1,15 +1,23 @@
 use bytemuck::{Pod, Zeroable};
 
-pub trait SampleFormat: Pod {
+pub unsafe trait SampleFormat: Pod {
     type Frame: Pod;
+    const FORMAT: SampleFormatEnum;
 }
 
-impl SampleFormat for i16 {
+pub enum SampleFormatEnum {
+    S16,
+    F32,
+}
+
+unsafe impl SampleFormat for i16 {
     type Frame = FrameS16;
+    const FORMAT: SampleFormatEnum = SampleFormatEnum::S16;
 }
 
-impl SampleFormat for f32 {
+unsafe impl SampleFormat for f32 {
     type Frame = FrameF32;
+    const FORMAT: SampleFormatEnum = SampleFormatEnum::F32;
 }
 
 pub type Sample = f32;
