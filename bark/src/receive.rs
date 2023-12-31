@@ -32,7 +32,7 @@ struct Stream {
     latency: Aggregate<Duration>,
     clock_delta: Aggregate<ClockDelta>,
     queue: PacketQueue,
-    pipeline: Pipeline,
+    pipeline: Pipeline<f32>,
 }
 
 impl Stream {

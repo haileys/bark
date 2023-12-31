@@ -1,62 +1,95 @@
 use core::fmt::{self, Display};
+use std::marker::PhantomData;
 
-use crate::audio::{self, SampleFormat};
+use bytemuck::Zeroable;
+
+use bark_protocol::CHANNELS;
+
+use crate::audio::{self, SampleFormat, SampleBufferMut};
 use crate::decode::{Decode, DecodeError, FrameBuffer};
 
-pub struct S16LEDecoder;
+pub struct S16LEDecoder<Sample>(PhantomData<Sample>);
 
-impl Display for S16LEDecoder {
+impl<S> S16LEDecoder<S> {
+    pub fn new() -> Self {
+        S16LEDecoder(PhantomData)
+    }
+}
+
+impl<S> Display for S16LEDecoder<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "signed16 (little endian)")
     }
 }
 
-impl<Sample: SampleFormat> Decode<Sample> for S16LEDecoder {
+impl<Sample: SampleFormat> Decode<Sample> for S16LEDecoder<Sample> {
     fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<Sample>) -> Result<(), DecodeError> {
-        decode_packed(bytes, out, |bytes| {
-            let input = i16::from_le_bytes(bytes);
-            let scale = i16::MAX as f32;
-            input as f32 / scale
-        })
+        decode_packed::<Sample, 2>(bytes, out,
+            i16::from_le_bytes,
+            |bytes| audio::format::i16_to_f32(i16::from_le_bytes(bytes)),
+        )
     }
 }
 
-pub struct F32LEDecoder;
+pub struct F32LEDecoder<Sample>(PhantomData<Sample>);
 
-impl Display for F32LEDecoder {
+impl<S> F32LEDecoder<S> {
+    pub fn new() -> Self {
+        F32LEDecoder(PhantomData)
+    }
+}
+
+impl<S> Display for F32LEDecoder<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "float32 (little endian)")
     }
 }
 
-impl<Sample: SampleFormat> Decode<Sample> for F32LEDecoder {
+impl<Sample: SampleFormat> Decode<Sample> for F32LEDecoder<Sample> {
     fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<Sample>) -> Result<(), DecodeError> {
-        decode_packed(bytes, out, f32::from_le_bytes)
+        decode_packed::<Sample, 4>(bytes, out,
+            |bytes| audio::format::f32_to_i16(f32::from_le_bytes(bytes)),
+            f32::from_le_bytes
+        )
     }
 }
 
-fn decode_packed<Sample: SampleFormat, const N: usize>(
+fn decode_packed<S: SampleFormat, const N: usize>(
     bytes: Option<&[u8]>,
-    out: &mut FrameBuffer<Sample>,
-    func: impl Fn([u8; N]) -> f32,
+    out: &mut FrameBuffer<S>,
+    decode_s16: impl Fn([u8; N]) -> i16,
+    decode_f32: impl Fn([u8; N]) -> f32,
 ) -> Result<(), DecodeError> {
-    let out_samples = audio::as_interleaved_mut(out);
-
     let Some(bytes) = bytes else {
         // PCM codecs have no packet loss correction
         // just zero fill and return
-        out_samples.fill(0.0);
+        out.fill(S::Frame::zeroed());
         return Ok(());
     };
 
-    check_length(bytes, out_samples.len() * N)?;
+    check_length(bytes, out.len() * usize::from(CHANNELS) * N)?;
 
-    for (input, output) in bytes.chunks_exact(N).zip(out_samples) {
-        // when array_chunks stabilises we can use that instead
-        // but for now use try_into to turn a &[u8] (guaranteed len == width)
-        // into a [u8; width]
-        let input = input.try_into().unwrap();
-        *output = func(input);
+    let input = bytes.chunks_exact(N);
+
+    match S::sample_buffer_mut(out) {
+        SampleBufferMut::S16(out) => {
+            for (input, output) in input.zip(out) {
+                // when array_chunks stabilises we can use that instead
+                // but for now use try_into to turn a &[u8] (guaranteed len == width)
+                // into a [u8; width]
+                let input = input.try_into().unwrap();
+                *output = decode_s16(input);
+            }
+        }
+        SampleBufferMut::F32(out) => {
+            for (input, output) in input.zip(out) {
+                // when array_chunks stabilises we can use that instead
+                // but for now use try_into to turn a &[u8] (guaranteed len == width)
+                // into a [u8; width]
+                let input = input.try_into().unwrap();
+                *output = decode_f32(input);
+            }
+        }
     }
 
     Ok(())
