@@ -52,7 +52,7 @@ pub struct StreamOpt {
 }
 
 pub fn run(opt: StreamOpt) -> Result<(), RunError> {
-    let input = Input::new(DeviceOpt {
+    let input = Input::<f32>::new(DeviceOpt {
         device: opt.input_device,
         period: opt.input_period
             .map(SampleDuration::from_frame_count)
