@@ -6,7 +6,7 @@ use core::fmt::Display;
 use bark_protocol::types::AudioPacketFormat;
 use thiserror::Error;
 
-use crate::audio::Frame;
+use crate::audio::FrameF32;
 
 #[derive(Debug, Error)]
 pub enum NewEncoderError {
@@ -24,5 +24,5 @@ pub enum EncodeError {
 
 pub trait Encode: Display + Send {
     fn header_format(&self) -> AudioPacketFormat;
-    fn encode_packet(&mut self, frames: &[Frame], out: &mut [u8]) -> Result<usize, EncodeError>;
+    fn encode_packet(&mut self, frames: &[FrameF32], out: &mut [u8]) -> Result<usize, EncodeError>;
 }

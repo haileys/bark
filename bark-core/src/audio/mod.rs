@@ -47,9 +47,6 @@ impl SampleFormat for f32 {
     }
 }
 
-pub type Sample = f32;
-pub type Frame = <Sample as SampleFormat>::Frame;
-
 #[derive(Pod, Zeroable, Copy, Clone, Debug)]
 #[repr(C)]
 pub struct FrameS16(pub i16, pub i16);
