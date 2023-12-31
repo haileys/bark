@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use alsa::{Direction, ValueOr};
 use alsa::pcm::{HwParams, Format, Access, IoFormat};
-use bark_core::audio::SampleFormat;
+use bark_core::audio::{SampleFormat, SampleBuffer};
 use bark_protocol::time::SampleDuration;
 use thiserror::Error;
 
@@ -39,8 +39,8 @@ impl<S: SampleFormat + IoFormat> PCM<S> {
             let hwp = HwParams::any(&pcm)?;
             hwp.set_channels(bark_protocol::CHANNELS.0.into())?;
             hwp.set_rate(bark_protocol::SAMPLE_RATE.0, ValueOr::Nearest)?;
-            hwp.set_format(Format::float())?;
             hwp.set_access(Access::RWInterleaved)?;
+            set_format::<S>(&hwp)?;
             set_period_size(&hwp, opt.period)?;
             set_buffer_size(&hwp, opt.buffer)?;
             pcm.hw_params(&hwp)?;
@@ -77,6 +77,13 @@ impl<S: SampleFormat + IoFormat> PCM<S> {
 
     pub fn recover(&self, err: i32, silent: bool) -> alsa::Result<()> {
         self.alsa.recover(err, silent)
+    }
+}
+
+fn set_format<S: SampleFormat>(hwp: &HwParams) -> alsa::Result<()> {
+    match S::sample_buffer(&[]) {
+        SampleBuffer::S16(_) => hwp.set_format(Format::s16()),
+        SampleBuffer::F32(_) => hwp.set_format(Format::float()),
     }
 }
 
