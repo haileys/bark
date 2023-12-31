@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bark_core::audio::Frame;
+use bark_core::audio::FrameF32;
 use bark_core::encode::Encode;
 use bark_core::encode::opus::OpusEncoder;
 use bark_core::encode::pcm::{S16LEEncoder, F32LEEncoder};
@@ -94,7 +94,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
             crate::thread::set_name("bark/audio");
 
             loop {
-                let mut audio_buffer = [Frame::zeroed(); FRAMES_PER_PACKET];
+                let mut audio_buffer = [FrameF32::zeroed(); FRAMES_PER_PACKET];
 
                 // read audio input
                 let timestamp = match input.read(&mut audio_buffer) {

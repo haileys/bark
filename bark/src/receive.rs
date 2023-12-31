@@ -2,7 +2,7 @@ use std::array;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bark_core::audio::Frame;
+use bark_core::audio::FrameF32;
 use bark_core::receive::pipeline::Pipeline;
 use bark_core::receive::timing::Timing;
 use bytemuck::Zeroable;
@@ -147,11 +147,11 @@ impl Receiver {
         }
     }
 
-    pub fn write_audio(&mut self, buffer: &mut [Frame], pts: Timestamp) -> usize {
+    pub fn write_audio(&mut self, buffer: &mut [FrameF32], pts: Timestamp) -> usize {
         // get stream start timing information:
         let Some(stream) = self.stream.as_mut() else {
             // stream hasn't started, just fill buffer with silence and return
-            buffer[0..FRAMES_PER_PACKET].fill(Frame::zeroed());
+            buffer[0..FRAMES_PER_PACKET].fill(FrameF32::zeroed());
             return FRAMES_PER_PACKET;
         };
 
@@ -284,7 +284,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
 
                 // this should be large enough for `write_audio` to process an
                 // entire packet with:
-                let mut buffer = [Frame::zeroed(); FRAMES_PER_PACKET * 2];
+                let mut buffer = [FrameF32::zeroed(); FRAMES_PER_PACKET * 2];
                 let count = state.recv.write_audio(&mut buffer, pts);
 
                 // drop lock before calling `Output::write` (blocking!)
