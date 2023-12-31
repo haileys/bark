@@ -1,8 +1,7 @@
 use core::fmt::{self, Display};
 
-use crate::audio;
-
-use super::{Decode, DecodeError, FrameBuffer};
+use crate::audio::{self, SampleFormat};
+use crate::decode::{Decode, DecodeError, FrameBuffer};
 
 pub struct S16LEDecoder;
 
@@ -12,8 +11,8 @@ impl Display for S16LEDecoder {
     }
 }
 
-impl Decode for S16LEDecoder {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
+impl<Sample: SampleFormat> Decode<Sample> for S16LEDecoder {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<Sample>) -> Result<(), DecodeError> {
         decode_packed(bytes, out, |bytes| {
             let input = i16::from_le_bytes(bytes);
             let scale = i16::MAX as f32;
@@ -30,15 +29,15 @@ impl Display for F32LEDecoder {
     }
 }
 
-impl Decode for F32LEDecoder {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
+impl<Sample: SampleFormat> Decode<Sample> for F32LEDecoder {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<Sample>) -> Result<(), DecodeError> {
         decode_packed(bytes, out, f32::from_le_bytes)
     }
 }
 
-fn decode_packed<const N: usize>(
+fn decode_packed<Sample: SampleFormat, const N: usize>(
     bytes: Option<&[u8]>,
-    out: &mut FrameBuffer,
+    out: &mut FrameBuffer<Sample>,
     func: impl Fn([u8; N]) -> f32,
 ) -> Result<(), DecodeError> {
     let out_samples = audio::as_interleaved_mut(out);
