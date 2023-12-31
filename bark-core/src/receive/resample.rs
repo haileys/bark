@@ -1,8 +1,9 @@
 use std::ffi::{c_void, c_int, CStr};
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::ptr;
 
-use crate::audio::{Frame, FrameCount};
+use crate::audio::{FrameCount, SampleFormat, SampleBuffer, SampleBufferMut};
 
 use self::ffi::speex_resampler_strerror;
 
@@ -33,24 +34,33 @@ mod ffi {
             output_len: *mut u32,
         ) -> c_int;
 
+        pub fn speex_resampler_process_interleaved_int(
+            ptr: *mut c_void,
+            input: *const i16,
+            input_len: *mut u32,
+            output: *mut i16,
+            output_len: *mut u32,
+        ) -> c_int;
+
         pub fn speex_resampler_destroy(ptr: *mut c_void);
 
         pub fn speex_resampler_strerror(err: c_int) -> *const c_char;
     }
 }
 
-pub struct Resampler {
+pub struct Resampler<S> {
     ptr: ResamplerPtr,
+    _phantom: PhantomData<S>,
 }
 
-unsafe impl Send for Resampler {}
+unsafe impl<S> Send for Resampler<S> {}
 
 pub struct ProcessResult {
     pub input_read: FrameCount,
     pub output_written: FrameCount,
 }
 
-impl Resampler {
+impl<S: SampleFormat> Resampler<S> {
     pub fn new() -> Self {
         let mut err: c_int = 0;
 
@@ -72,7 +82,10 @@ impl Resampler {
             panic!("speex_resampler_init failed: {err:?}");
         }
 
-        Resampler { ptr: ResamplerPtr(ptr) }
+        Resampler {
+            ptr: ResamplerPtr(ptr),
+            _phantom: PhantomData,
+        }
     }
 
     pub fn set_input_rate(&mut self, rate: u32) -> Result<(), SpeexError> {
@@ -91,7 +104,7 @@ impl Resampler {
         Ok(())
     }
 
-    pub fn process(&mut self, input: &[Frame], output: &mut [Frame])
+    pub fn process(&mut self, input: &[S::Frame], output: &mut [S::Frame])
         -> Result<ProcessResult, SpeexError>
     {
         // usize could technically be 64 bit, speex only takes u32 sizes,
@@ -105,15 +118,28 @@ impl Resampler {
         let mut input_len = u32::try_from(input_len).unwrap();
         let mut output_len = u32::try_from(output_len).unwrap();
 
-        let err = unsafe {
-            ffi::speex_resampler_process_interleaved_float(
-                self.ptr.0,
-                input.as_ptr().cast(),
-                // speex API takes frame count already:
-                &mut input_len,
-                output.as_mut_ptr().cast(),
-                &mut output_len,
-            )
+        let err = match (S::sample_buffer(input), S::sample_buffer_mut(output)) {
+            (SampleBuffer::F32(input), SampleBufferMut::F32(output)) => unsafe {
+                ffi::speex_resampler_process_interleaved_float(
+                    self.ptr.0,
+                    input.as_ptr(),
+                    // speex API takes frame count already:
+                    &mut input_len,
+                    output.as_mut_ptr(),
+                    &mut output_len,
+                )
+            },
+            (SampleBuffer::S16(input), SampleBufferMut::S16(output)) => unsafe {
+                ffi::speex_resampler_process_interleaved_int(
+                    self.ptr.0,
+                    input.as_ptr(),
+                    // speex API takes frame count already:
+                    &mut input_len,
+                    output.as_mut_ptr(),
+                    &mut output_len,
+                )
+            },
+            _ => unreachable!()
         };
 
         if err != 0 {

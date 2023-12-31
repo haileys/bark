@@ -3,14 +3,15 @@ use core::marker::PhantomData;
 
 use bark_protocol::SAMPLE_RATE;
 
-use crate::audio::{self, SampleFormat};
+use crate::audio::{SampleFormat, SampleBufferMut};
 use crate::decode::{Decode, DecodeError, FrameBuffer};
 
-pub struct OpusDecoder<Sample> {
-    decode: PolyDecode<Sample>,
+pub struct OpusDecoder<S> {
+    opus: opus::Decoder,
+    _phantom: PhantomData<S>
 }
 
-impl<Sample: SampleFormat> OpusDecoder<Sample> {
+impl<S: SampleFormat> OpusDecoder<S> {
     pub fn new() -> Result<Self, opus::Error> {
         let opus = opus::Decoder::new(
             SAMPLE_RATE.0,
@@ -21,30 +22,19 @@ impl<Sample: SampleFormat> OpusDecoder<Sample> {
     }
 }
 
-impl<Sample: SampleFormat> Display for OpusDecoder<Sample> {
+impl<S> Display for OpusDecoder<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "opus")
     }
 }
 
-impl<Sample: SampleFormat> Decode<Sample> for OpusDecoder<Sample> {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<f32>) -> Result<(), DecodeError> {
+impl<S: SampleFormat> Decode<S> for OpusDecoder<S> {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<S>) -> Result<(), DecodeError> {
         let expected = out.len();
 
-        fn decode_inner<S: SampleFormat>(
-            opus: &mut opus::Decoder,
-            bytes: &[u8],
-            out: &mut [S::Frame],
-            fec: bool,
-        ) -> opus::Result<usize> {
-            match S::FORMAT {
-
-            }
-        }
-
         let frames = match bytes {
-            Some(bytes) => self.decode.decode(bytes, audio::as_interleaved_mut(out), false)?,
-            None => self.decode.decode(&[], audio::as_interleaved_mut(out), true)?,
+            Some(bytes) => decode_dispatch::<S>(&mut self.opus, bytes, out, false)?,
+            None => decode_dispatch::<S>(&mut self.opus, &[], out, true)?,
         };
 
         if expected != frames {
@@ -52,5 +42,17 @@ impl<Sample: SampleFormat> Decode<Sample> for OpusDecoder<Sample> {
         }
 
         Ok(())
+    }
+}
+
+fn decode_dispatch<S: SampleFormat>(
+    opus: &mut opus::Decoder,
+    input: &[u8],
+    output: &mut [S::Frame],
+    fec: bool,
+) -> opus::Result<usize> {
+    match S::sample_buffer_mut(output) {
+        SampleBufferMut::S16(output) => opus.decode(input, output, fec),
+        SampleBufferMut::F32(output) => opus.decode_float(input, output, fec),
     }
 }

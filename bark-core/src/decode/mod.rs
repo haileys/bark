@@ -9,7 +9,7 @@ use bark_protocol::FRAMES_PER_PACKET;
 use bark_protocol::packet::Audio;
 use bark_protocol::types::{AudioPacketHeader, AudioPacketFormat};
 
-use crate::audio::{Frame, SampleFormat};
+use crate::audio::SampleFormat;
 
 #[derive(Debug, Error)]
 pub enum NewDecoderError {
@@ -29,17 +29,17 @@ pub enum DecodeError {
     Opus(#[from] ::opus::Error),
 }
 
-pub struct Decoder {
-    decode: DecodeFormat,
+pub struct Decoder<Sample> {
+    decode: DecodeFormat<Sample>,
 }
 
-pub type FrameBuffer<Sample: SampleFormat> = [Sample::Frame; FRAMES_PER_PACKET];
+pub type FrameBuffer<S> = [<S as SampleFormat>::Frame; FRAMES_PER_PACKET];
 
-impl Decoder {
+impl<S: SampleFormat> Decoder<S> {
     pub fn new(header: &AudioPacketHeader) -> Result<Self, NewDecoderError> {
         let decode = match header.format {
-            AudioPacketFormat::S16LE => DecodeFormat::S16LE(pcm::S16LEDecoder),
-            AudioPacketFormat::F32LE => DecodeFormat::F32LE(pcm::F32LEDecoder),
+            AudioPacketFormat::S16LE => DecodeFormat::S16LE(pcm::S16LEDecoder::new()),
+            AudioPacketFormat::F32LE => DecodeFormat::F32LE(pcm::F32LEDecoder::new()),
             AudioPacketFormat::OPUS => DecodeFormat::Opus(opus::OpusDecoder::new()?),
             format => { return Err(NewDecoderError::UnknownFormat(format)) }
         };
@@ -51,7 +51,7 @@ impl Decoder {
         &self.decode as &dyn Display
     }
 
-    pub fn decode(&mut self, packet: Option<&Audio>, out: &mut FrameBuffer<f32>) -> Result<(), DecodeError> {
+    pub fn decode(&mut self, packet: Option<&Audio>, out: &mut FrameBuffer<S>) -> Result<(), DecodeError> {
         let bytes = packet.map(|packet| packet.buffer_bytes());
         self.decode.decode_packet(bytes, out)
     }
@@ -61,13 +61,13 @@ trait Decode<Sample: SampleFormat>: Display {
     fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<Sample>) -> Result<(), DecodeError>;
 }
 
-enum DecodeFormat {
-    S16LE(pcm::S16LEDecoder),
-    F32LE(pcm::F32LEDecoder),
-    Opus(opus::OpusDecoder<f32>),
+enum DecodeFormat<S> {
+    S16LE(pcm::S16LEDecoder<S>),
+    F32LE(pcm::F32LEDecoder<S>),
+    Opus(opus::OpusDecoder<S>),
 }
 
-impl<Sample: SampleFormat> Decode<Sample> for DecodeFormat {
+impl<Sample: SampleFormat> Decode<Sample> for DecodeFormat<Sample> {
     fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer<Sample>) -> Result<(), DecodeError> {
         match self {
             DecodeFormat::S16LE(dec) => dec.decode_packet(bytes, out),
@@ -77,7 +77,7 @@ impl<Sample: SampleFormat> Decode<Sample> for DecodeFormat {
     }
 }
 
-impl Display for DecodeFormat {
+impl<S> Display for DecodeFormat<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             DecodeFormat::S16LE(dec) => dec.fmt(f),
