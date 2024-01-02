@@ -21,12 +21,12 @@ pub struct Source {
     #[serde(default)]
     input: Device,
     delay_ms: Option<u64>,
-    format: Option<Format>,
+    format: Option<StreamFormat>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Format {
+pub enum StreamFormat {
     S16LE,
     F32LE,
     Opus,
@@ -36,25 +36,51 @@ pub enum Format {
 #[error("unknown format")]
 pub struct UnknownFormat;
 
-impl FromStr for Format {
+impl FromStr for StreamFormat {
     type Err = UnknownFormat;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "s16le" => Ok(Format::S16LE),
-            "f32le" => Ok(Format::F32LE),
-            "opus" => Ok(Format::Opus),
+            "s16le" => Ok(StreamFormat::S16LE),
+            "f32le" => Ok(StreamFormat::F32LE),
+            "opus" => Ok(StreamFormat::Opus),
             _ => Err(UnknownFormat),
         }
     }
 }
 
-impl Display for Format {
+impl Display for StreamFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Format::S16LE => write!(f, "s16le"),
-            Format::F32LE => write!(f, "f32le"),
-            Format::Opus => write!(f, "opus"),
+            StreamFormat::S16LE => write!(f, "s16le"),
+            StreamFormat::F32LE => write!(f, "f32le"),
+            StreamFormat::Opus => write!(f, "opus"),
+        }
+    }
+}
+
+pub enum SampleFormat {
+    S16,
+    F32,
+}
+
+impl FromStr for SampleFormat {
+    type Err = UnknownFormat;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "s16" => Ok(SampleFormat::S16),
+            "f32" => Ok(SampleFormat::F32),
+            _ => Err(UnknownFormat),
+        }
+    }
+}
+
+impl Display for SampleFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SampleFormat::S16 => write!(f, "s16"),
+            SampleFormat::F32 => write!(f, "f32"),
         }
     }
 }
@@ -70,6 +96,7 @@ pub struct Device {
     device: Option<String>,
     period: Option<u64>,
     buffer: Option<u64>,
+    format: Option<SampleFormat>,
 }
 
 fn set_env<T: ToString>(name: &str, value: T) {
@@ -92,6 +119,7 @@ pub fn load_into_env(config: &Config) {
     set_env_option("BARK_RECEIVE_OUTPUT_DEVICE", config.receive.output.device.as_ref());
     set_env_option("BARK_RECEIVE_OUTPUT_PERIOD", config.receive.output.period);
     set_env_option("BARK_RECEIVE_OUTPUT_BUFFER", config.receive.output.buffer);
+    set_env_option("BARK_RECEIVE_OUTPUT_FORMAT", config.receive.output.format);
 }
 
 fn load_file(path: &Path) -> Option<Config> {

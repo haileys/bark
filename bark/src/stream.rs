@@ -48,7 +48,7 @@ pub struct StreamOpt {
         env = "BARK_SOURCE_FORMAT",
         default_value = "f32le",
     )]
-    pub format: config::Format,
+    pub format: config::StreamFormat,
 }
 
 pub fn run(opt: StreamOpt) -> Result<(), RunError> {
@@ -73,9 +73,9 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let node = stats::node::get();
 
     let mut encoder: Box<dyn Encode> = match opt.format {
-        config::Format::S16LE => Box::new(S16LEEncoder),
-        config::Format::F32LE => Box::new(F32LEEncoder),
-        config::Format::Opus => Box::new(OpusEncoder::new()?),
+        config::StreamFormat::S16LE => Box::new(S16LEEncoder),
+        config::StreamFormat::F32LE => Box::new(F32LEEncoder),
+        config::StreamFormat::Opus => Box::new(OpusEncoder::new()?),
     };
 
     log::info!("instantiated encoder: {}", encoder);
