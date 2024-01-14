@@ -271,7 +271,6 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         let state = state.clone();
         move || {
             thread::set_name("bark/audio");
-            thread::set_realtime_priority();
 
             loop {
                 let mut state = state.lock().unwrap();
