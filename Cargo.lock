@@ -154,6 +154,7 @@ dependencies = [
  "heapless",
  "log",
  "opus",
+ "soxr",
  "thiserror",
 ]
 
@@ -787,6 +788,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsoxr-sys"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cffdc8b3b64759d2e95e3236fa6bf85fef226bf57023fa9273ec60edea8fbce"
+dependencies = [
+ "pkg-config",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1148,6 +1158,17 @@ checksum = "2538b18701741680e0322a2302176d3253a35388e2e62f172f64f4f16605f877"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "soxr"
+version = "0.0.0"
+source = "git+https://github.com/haileys/soxr-rs#5a69d664aa65f06f9fc124cbb817162a7b9be256"
+dependencies = [
+ "bitflags 2.4.0",
+ "bytemuck",
+ "libsoxr-sys",
+ "thiserror",
 ]
 
 [[package]]
