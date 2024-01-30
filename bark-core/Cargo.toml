@@ -14,3 +14,4 @@ heapless = { workspace = true }
 log = { workspace = true }
 opus = "0.3.0"
 thiserror = { workspace = true }
+soxr = { git = "https://github.com/haileys/soxr-rs" }
