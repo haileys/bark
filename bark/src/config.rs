@@ -59,6 +59,8 @@ impl Display for StreamFormat {
     }
 }
 
+#[derive(Deserialize, Debug, Copy, Clone)]
+#[serde(try_from = "String")]
 pub enum SampleFormat {
     S16,
     F32,
@@ -73,6 +75,14 @@ impl FromStr for SampleFormat {
             "f32" => Ok(SampleFormat::F32),
             _ => Err(UnknownFormat),
         }
+    }
+}
+
+impl TryFrom<String> for SampleFormat {
+    type Error = <Self as FromStr>::Err;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
