@@ -4,12 +4,7 @@ use thiserror::Error;
 
 use self::config::DeviceOpt;
 
-pub mod alsa {
-    pub mod config;
-    pub mod input;
-    pub mod output;
-}
-
+pub mod alsa;
 pub mod config;
 
 #[derive(Debug, Error)]
