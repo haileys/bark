@@ -4,25 +4,31 @@ use thiserror::Error;
 
 use self::config::DeviceOpt;
 
+#[cfg(target_os = "linux")]
 pub mod alsa;
+
 pub mod config;
 
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub enum OpenError {
+    #[cfg(target_os = "linux")]
     Alsa(#[from] alsa::config::OpenError),
 }
 
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub enum Error {
+    #[cfg(target_os = "linux")]
     Alsa(#[from] ::alsa::Error),
 }
 
 pub struct Input {
+    #[cfg(target_os = "linux")]
     alsa: alsa::input::Input,
 }
 
+#[cfg(target_os = "linux")]
 impl Input {
     pub fn new(opt: DeviceOpt) -> Result<Self, OpenError> {
         Ok(Input {
@@ -36,9 +42,11 @@ impl Input {
 }
 
 pub struct Output {
+    #[cfg(target_os = "linux")]
     alsa: alsa::output::Output,
 }
 
+#[cfg(target_os = "linux")]
 impl Output {
     pub fn new(opt: DeviceOpt) -> Result<Self, OpenError> {
         Ok(Output {

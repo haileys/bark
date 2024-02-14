@@ -11,7 +11,6 @@ opus = ["bark-core/opus"]
 bark-core = { workspace = true }
 bark-protocol = { workspace = true }
 
-alsa = "0.8.1"
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 derive_more = { workspace = true }
@@ -29,3 +28,6 @@ termcolor = "1.2.0"
 thiserror = { workspace = true }
 toml = "0.7.6"
 xdg = "2.5.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.8"
