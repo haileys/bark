@@ -247,7 +247,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         pub recv: Receiver,
     }
 
-    let output = Output::new(DeviceOpt {
+    let mut output = Output::new(DeviceOpt {
         device: opt.output_device,
         period: opt.output_period
             .map(SampleDuration::from_frame_count)

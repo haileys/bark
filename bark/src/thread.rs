@@ -1,10 +1,6 @@
-use std::ffi::CString;
-use std::io::ErrorKind;
-use std::sync::atomic::AtomicBool;
-
 #[cfg(target_os = "linux")]
 pub fn set_name(name: &str) {
-    let cstr = CString::new(name)
+    let cstr = std::ffi::CString::new(name)
         .expect("not a cstring in set_thread_name");
 
     unsafe {
@@ -19,6 +15,9 @@ pub fn set_name(name: &str) {
 
 #[cfg(target_os = "linux")]
 pub fn set_realtime_priority() {
+    use std::io::ErrorKind;
+    use std::sync::atomic::AtomicBool;
+
     let rc = unsafe {
         libc::sched_setscheduler(
             0,

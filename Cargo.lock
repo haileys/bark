@@ -127,6 +127,8 @@ dependencies = [
  "bark-protocol",
  "bitflags 2.4.0",
  "bytemuck",
+ "coreaudio-rs",
+ "coreaudio-sys",
  "derive_more",
  "env_logger",
  "libc",
@@ -188,6 +190,26 @@ dependencies = [
  "shlex",
  "syn 1.0.109",
  "which",
+]
+
+[[package]]
+name = "bindgen"
+version = "0.69.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a00dc851838a2120612785d195287475a3ac45514741da670b735818822129a0"
+dependencies = [
+ "bitflags 2.4.0",
+ "cexpr",
+ "clang-sys",
+ "itertools",
+ "lazy_static",
+ "lazycell",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -396,6 +418,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
 
 [[package]]
+name = "coreaudio-rs"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "321077172d79c662f64f5071a03120748d5bb652f5231570141be24cfcd2bace"
+dependencies = [
+ "bitflags 1.3.2",
+ "core-foundation-sys",
+ "coreaudio-sys",
+]
+
+[[package]]
+name = "coreaudio-sys"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f01585027057ff5f0a5bf276174ae4c1594a2c5bde93d5f46a016d76270f5a9"
+dependencies = [
+ "bindgen 0.69.4",
+]
+
+[[package]]
 name = "critical-section"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -436,7 +478,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "781ccceeeb5ec01843b78b12b39cab4c90d6dbf853e1e8c2536cdb16e9da642a"
 dependencies = [
  "anyhow",
- "bindgen",
+ "bindgen 0.63.0",
  "bitflags 1.3.2",
  "cmake",
  "filetime",
@@ -508,7 +550,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e0982cea5ec42cccbd9fc57698499489b503c525efaacc0368a363371694c9b"
 dependencies = [
  "anyhow",
- "bindgen",
+ "bindgen 0.63.0",
  "build-time",
  "cargo_metadata",
  "const_format",
@@ -742,6 +784,15 @@ dependencies = [
  "hermit-abi 0.3.3",
  "rustix",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
 ]
 
 [[package]]
