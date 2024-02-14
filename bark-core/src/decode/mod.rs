@@ -1,4 +1,6 @@
+#[cfg(feature = "opus")]
 pub mod opus;
+
 pub mod pcm;
 
 use core::fmt::Display;
@@ -15,6 +17,7 @@ use crate::audio::Frame;
 pub enum NewDecoderError {
     #[error("unknown format in audio header: {0:?}")]
     UnknownFormat(AudioPacketFormat),
+    #[cfg(feature = "opus")]
     #[error("opus codec error: {0}")]
     Opus(#[from] ::opus::Error),
 }
@@ -25,6 +28,7 @@ pub enum DecodeError {
     WrongLength { length: usize, expected: usize },
     #[error("wrong frame count: {frames}, expected: {expected}")]
     WrongFrameCount { frames: usize, expected: usize },
+    #[cfg(feature = "opus")]
     #[error("opus codec error: {0}")]
     Opus(#[from] ::opus::Error),
 }
@@ -40,6 +44,7 @@ impl Decoder {
         let decode = match header.format {
             AudioPacketFormat::S16LE => DecodeFormat::S16LE(pcm::S16LEDecoder),
             AudioPacketFormat::F32LE => DecodeFormat::F32LE(pcm::F32LEDecoder),
+            #[cfg(feature = "opus")]
             AudioPacketFormat::OPUS => DecodeFormat::Opus(opus::OpusDecoder::new()?),
             format => { return Err(NewDecoderError::UnknownFormat(format)) }
         };
@@ -64,6 +69,7 @@ trait Decode: Display {
 enum DecodeFormat {
     S16LE(pcm::S16LEDecoder),
     F32LE(pcm::F32LEDecoder),
+    #[cfg(feature = "opus")]
     Opus(opus::OpusDecoder),
 }
 
@@ -72,6 +78,7 @@ impl Decode for DecodeFormat {
         match self {
             DecodeFormat::S16LE(dec) => dec.decode_packet(bytes, out),
             DecodeFormat::F32LE(dec) => dec.decode_packet(bytes, out),
+            #[cfg(feature = "opus")]
             DecodeFormat::Opus(dec) => dec.decode_packet(bytes, out),
         }
     }
@@ -82,6 +89,7 @@ impl Display for DecodeFormat {
         match self {
             DecodeFormat::S16LE(dec) => dec.fmt(f),
             DecodeFormat::F32LE(dec) => dec.fmt(f),
+            #[cfg(feature = "opus")]
             DecodeFormat::Opus(dec) => dec.fmt(f),
         }
     }

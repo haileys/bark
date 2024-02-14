@@ -3,11 +3,13 @@ use std::time::Duration;
 
 use bark_core::audio::Frame;
 use bark_core::encode::Encode;
-use bark_core::encode::opus::OpusEncoder;
 use bark_core::encode::pcm::{S16LEEncoder, F32LEEncoder};
 use bark_protocol::FRAMES_PER_PACKET;
 use bytemuck::Zeroable;
 use structopt::StructOpt;
+
+#[cfg(feature = "opus")]
+use bark_core::encode::opus::OpusEncoder;
 
 use bark_protocol::time::SampleDuration;
 use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
@@ -75,6 +77,7 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
     let mut encoder: Box<dyn Encode> = match opt.format {
         config::Format::S16LE => Box::new(S16LEEncoder),
         config::Format::F32LE => Box::new(F32LEEncoder),
+        #[cfg(feature = "opus")]
         config::Format::Opus => Box::new(OpusEncoder::new()?),
     };
 

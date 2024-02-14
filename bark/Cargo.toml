@@ -3,7 +3,9 @@ name = "bark"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["opus"]
+opus = ["bark-core/opus"]
 
 [dependencies]
 bark-core = { workspace = true }

@@ -29,6 +29,7 @@ pub struct Source {
 pub enum Format {
     S16LE,
     F32LE,
+    #[cfg(feature = "opus")]
     Opus,
 }
 
@@ -43,6 +44,7 @@ impl FromStr for Format {
         match s {
             "s16le" => Ok(Format::S16LE),
             "f32le" => Ok(Format::F32LE),
+            #[cfg(feature = "opus")]
             "opus" => Ok(Format::Opus),
             _ => Err(UnknownFormat),
         }
@@ -54,6 +56,7 @@ impl Display for Format {
         match self {
             Format::S16LE => write!(f, "s16le"),
             Format::F32LE => write!(f, "f32le"),
+            #[cfg(feature = "opus")]
             Format::Opus => write!(f, "opus"),
         }
     }

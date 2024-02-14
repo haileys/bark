@@ -1,4 +1,6 @@
+#[cfg(feature = "opus")]
 pub mod opus;
+
 pub mod pcm;
 
 use core::fmt::Display;
@@ -10,6 +12,7 @@ use crate::audio::Frame;
 
 #[derive(Debug, Error)]
 pub enum NewEncoderError {
+    #[cfg(feature = "opus")]
     #[error("opus codec error: {0}")]
     Opus(#[from] ::opus::Error),
 }
@@ -18,6 +21,7 @@ pub enum NewEncoderError {
 pub enum EncodeError {
     #[error("output buffer too small, need at least {need} bytes")]
     OutputBufferTooSmall { need: usize },
+    #[cfg(feature = "opus")]
     #[error("opus codec error: {0}")]
     Opus(#[from] ::opus::Error),
 }
