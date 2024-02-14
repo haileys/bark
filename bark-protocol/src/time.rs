@@ -1,6 +1,6 @@
 use crate::packet;
 use crate::types::TimestampMicros;
-use crate::{SAMPLE_RATE, FRAMES_PER_PACKET, CHANNELS};
+use crate::{SAMPLE_RATE, FRAMES_PER_PACKET};
 
 /// A timestamp with implicit denominator SAMPLE_RATE
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -79,18 +79,6 @@ impl SampleDuration {
         let usecs = (u128::from(self.0) * 1_000_000) / u128::from(SAMPLE_RATE);
         let usecs = u64::try_from(usecs).expect("can't narrow usecs to u64");
         core::time::Duration::from_micros(usecs)
-    }
-
-    pub fn as_buffer_offset(&self) -> usize {
-        let offset = self.0 * u64::from(CHANNELS);
-        usize::try_from(offset).unwrap()
-    }
-
-    pub fn from_buffer_offset(offset: usize) -> Self {
-        let channels = usize::from(CHANNELS);
-        assert!(offset % channels == 0);
-
-        SampleDuration(u64::try_from(offset / channels).unwrap())
     }
 
     pub fn add(&self, other: SampleDuration) -> Self {
