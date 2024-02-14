@@ -60,12 +60,6 @@ impl Stream {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct ClockInfo {
-    pub network_latency_usec: i64,
-    pub clock_diff_usec: i64,
-}
-
 impl Receiver {
     pub fn new() -> Self {
         Receiver {
