@@ -2,6 +2,7 @@ use std::ffi::CString;
 use std::io::ErrorKind;
 use std::sync::atomic::AtomicBool;
 
+#[cfg(target_os = "linux")]
 pub fn set_name(name: &str) {
     let cstr = CString::new(name)
         .expect("not a cstring in set_thread_name");
@@ -11,6 +12,12 @@ pub fn set_name(name: &str) {
     }
 }
 
+#[cfg(target_os = "macos")]
+pub fn set_name(name: &str) {
+    log::warn!("setting thread name not implemented on macOS: {name}");
+}
+
+#[cfg(target_os = "linux")]
 pub fn set_realtime_priority() {
     let rc = unsafe {
         libc::sched_setscheduler(
@@ -44,4 +51,9 @@ pub fn set_realtime_priority() {
         }
     }
 
+}
+
+#[cfg(target_os = "macos")]
+pub fn set_realtime_priority() {
+    log::warn!("setting realtime priority not implemented on macOS")
 }
