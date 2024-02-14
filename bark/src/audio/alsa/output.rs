@@ -3,18 +3,12 @@ use alsa::pcm::PCM;
 use bark_core::audio::{Frame, self};
 use bark_protocol::time::SampleDuration;
 use nix::errno::Errno;
-use thiserror::Error;
 
-use crate::audio::config::{self, DeviceOpt, OpenError};
+use crate::audio::config::DeviceOpt;
+use crate::audio::alsa::config::{self, OpenError};
 
 pub struct Output {
     pcm: PCM,
-}
-
-#[derive(Debug, Error)]
-pub enum WriteAudioError {
-    #[error("alsa: {0}")]
-    Alsa(#[from] alsa::Error),
 }
 
 impl Output {
@@ -23,7 +17,7 @@ impl Output {
         Ok(Output { pcm })
     }
 
-    pub fn write(&self, mut audio: &[Frame]) -> Result<(), WriteAudioError> {
+    pub fn write(&self, mut audio: &[Frame]) -> Result<(), alsa::Error> {
         while audio.len() > 0 {
             let n = self.write_partial(audio)?;
             audio = &audio[n..];
@@ -32,7 +26,7 @@ impl Output {
         Ok(())
     }
 
-    fn write_partial(&self, audio: &[Frame]) -> Result<usize, WriteAudioError> {
+    fn write_partial(&self, audio: &[Frame]) -> Result<usize, alsa::Error> {
         let io = unsafe {
             // the checked versions of this function call
             // snd_pcm_hw_params_current which mallocs under the hood

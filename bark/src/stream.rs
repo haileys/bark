@@ -14,7 +14,7 @@ use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
 use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
 
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
-use crate::audio::input::Input;
+use crate::audio::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
 use crate::{stats, time, config};
 use crate::RunError;

@@ -26,7 +26,7 @@ pub enum RunError {
     #[error("opening network socket: {0}")]
     Listen(#[from] socket::ListenError),
     #[error("opening audio device: {0}")]
-    OpenAudioDevice(#[from] audio::config::OpenError),
+    OpenAudioDevice(#[from] audio::OpenError),
     #[error("receiving from network: {0}")]
     Receive(std::io::Error),
     #[error("opening encoder: {0}")]

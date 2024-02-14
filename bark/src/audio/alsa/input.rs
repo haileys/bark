@@ -3,19 +3,13 @@ use alsa::pcm::PCM;
 use bark_core::audio::{Frame, self};
 use bark_protocol::time::{Timestamp, SampleDuration};
 use nix::errno::Errno;
-use thiserror::Error;
 
-use crate::audio::config::{self, DeviceOpt, OpenError};
+use crate::audio::config::DeviceOpt;
+use crate::audio::alsa::config::{self, OpenError};
 use crate::time;
 
 pub struct Input {
     pcm: PCM,
-}
-
-#[derive(Debug, Error)]
-pub enum ReadAudioError {
-    #[error("alsa: {0}")]
-    Alsa(#[from] alsa::Error),
 }
 
 impl Input {
@@ -24,7 +18,7 @@ impl Input {
         Ok(Input { pcm })
     }
 
-    pub fn read(&self, mut audio: &mut [Frame]) -> Result<Timestamp, ReadAudioError> {
+    pub fn read(&self, mut audio: &mut [Frame]) -> Result<Timestamp, alsa::Error> {
         let now = Timestamp::from_micros_lossy(time::now());
         let timestamp = now.saturating_sub(self.delay()?);
 
@@ -36,7 +30,7 @@ impl Input {
         Ok(timestamp)
     }
 
-    fn read_partial(&self, audio: &mut [Frame]) -> Result<usize, ReadAudioError> {
+    fn read_partial(&self, audio: &mut [Frame]) -> Result<usize, alsa::Error> {
         let io = unsafe {
             // the checked versions of this function call
             // snd_pcm_hw_params_current which mallocs under the hood

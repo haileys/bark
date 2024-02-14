@@ -17,7 +17,7 @@ use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
-use crate::audio::output::Output;
+use crate::audio::Output;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{time, stats, thread};
 use crate::RunError;
