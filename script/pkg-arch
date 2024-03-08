@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+
+cd "$(dirname "$0")/../pkg/arch"
+
+# reset
+rm -rf pkg
+rm *.pkg.tar.zst
+
+# build
+makepkg --nodeps --force --clean
+
+# copy built package into dist dir in the repo root
+mkdir -p ../../dist
+cp *.pkg.tar.zst ../../dist/

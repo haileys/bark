@@ -1,5 +1,5 @@
 # Maintainer: Hailey Somerville <bark@hails.org>
-pkgname=bark-git
+pkgname=bark
 pkgdesc="Synchronised multicast audio streaming"
 license=("AGPL3")
 url="https://github.com/haileys/bark"
@@ -7,9 +7,23 @@ pkgver=0
 pkgrel=1
 
 pkgver() {
-    local number="$(git -C "$srcdir" rev-list --count HEAD)"
-    local commit="$(git -C "$srcdir" rev-parse --short=7 HEAD)"
-    echo "r${number}.g${commit}"
+    local ver
+
+    # get version string from git
+    ver="$(git describe --tags HEAD)"
+
+    # strip leading 'v'
+    [[ "$ver" == v* ]] && ver="${ver:1}"
+
+    # transform hyphens to underscores
+    ver="$(tr '-' '_' <<<"$ver")"
+
+    echo "'$ver'" >&2
+    echo "$ver"
+
+    # local number="$(git -C "$srcdir" rev-list --count HEAD)"
+    # local commit="$(git -C "$srcdir" rev-parse --short=7 HEAD)"
+    # echo "r${number}.g${commit}"
 }
 
 depends=(
