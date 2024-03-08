@@ -3,7 +3,7 @@ pkgname=bark
 pkgdesc="Synchronised multicast audio streaming"
 license=("AGPL3")
 url="https://github.com/haileys/bark"
-pkgver=0
+pkgver=0.6.0
 pkgrel=1
 
 pkgver() {

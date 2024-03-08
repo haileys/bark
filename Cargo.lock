@@ -120,7 +120,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "bark"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "alsa",
  "bark-core",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "bark-core"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "bark-protocol",
  "bytemuck",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "bark-protocol"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "bitflags 2.4.0",
  "bytemuck",
