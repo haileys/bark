@@ -22,6 +22,9 @@ use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{time, stats, thread};
 use crate::RunError;
 
+mod queue;
+mod stream;
+
 pub struct Receiver {
     stats: ReceiverStats,
     stream: Option<Stream>,
@@ -38,7 +41,6 @@ struct Stream {
 impl Stream {
     pub fn new(header: &AudioPacketHeader) -> Self {
         let queue = PacketQueue::new(header);
-
 
         Stream {
             sid: header.sid,
