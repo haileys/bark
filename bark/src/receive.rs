@@ -8,46 +8,51 @@ use bark_core::receive::timing::Timing;
 use bytemuck::Zeroable;
 use structopt::StructOpt;
 
-use bark_core::receive::queue::PacketQueue;
+use bark_core::receive::queue::{AudioPts, PacketQueue};
 
 use bark_protocol::FRAMES_PER_PACKET;
 use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
-use bark_protocol::types::{SessionId, ReceiverId, TimePhase, AudioPacketHeader};
+use bark_protocol::types::{AudioPacketHeader, ReceiverId, SessionId, TimePhase, TimestampMicros};
 use bark_protocol::types::stats::receiver::{ReceiverStats, StreamStatus};
 use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::Output;
+use crate::config::Device;
+use crate::receive::output::OutputRef;
+use crate::receive::stream::Stream as ReceiveStream;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{time, stats, thread};
 use crate::RunError;
 
+use self::output::OwnedOutput;
+
+mod output;
 mod queue;
 mod stream;
 
 pub struct Receiver {
     stats: ReceiverStats,
     stream: Option<Stream>,
+    output: OwnedOutput,
 }
 
 struct Stream {
     sid: SessionId,
     latency: Aggregate<Duration>,
     clock_delta: Aggregate<ClockDelta>,
-    queue: PacketQueue,
-    pipeline: Pipeline,
+    stream: ReceiveStream,
 }
 
 impl Stream {
-    pub fn new(header: &AudioPacketHeader) -> Self {
-        let queue = PacketQueue::new(header);
+    pub fn new(header: &AudioPacketHeader, output: OutputRef) -> Self {
+        let stream = ReceiveStream::new(header, output);
 
         Stream {
             sid: header.sid,
             latency: Aggregate::new(),
             clock_delta: Aggregate::new(),
-            queue,
-            pipeline: Pipeline::new(header),
+            stream,
         }
     }
 
@@ -63,10 +68,11 @@ impl Stream {
 }
 
 impl Receiver {
-    pub fn new() -> Self {
+    pub fn new(output: Output) -> Self {
         Receiver {
             stream: None,
             stats: ReceiverStats::new(),
+            output: OwnedOutput::new(output),
         }
     }
 
@@ -115,9 +121,12 @@ impl Receiver {
         };
 
         if new_stream {
+            // start new stream
+            let stream = Stream::new(header, self.output.steal());
+
             // new stream is taking over! switch over to it
             log::info!("new stream beginning: sid={}", header.sid.0);
-            self.stream = Some(Stream::new(header));
+            self.stream = Some(stream);
             self.stats.clear();
         }
 
@@ -127,10 +136,25 @@ impl Receiver {
     pub fn receive_audio(&mut self, packet: Audio) {
         let now = time::now();
 
-        let packet_dts = packet.header().dts;
+        let header = packet.header();
+        let stream = self.prepare_stream(header);
 
-        let stream = self.prepare_stream(packet.header());
-        stream.queue.insert_packet(packet);
+        let packet_dts = header.dts;
+
+        // translate presentation timestamp of this packet:
+        let pts = Timestamp::from_micros_lossy(header.pts);
+        let pts = stream.adjust_pts(pts).unwrap_or_else(|| {
+            // if we don't yet have the clock information to adjust timestamps,
+            // default to packet pts-dts, added to our current local time
+            let stream_delay = header.pts.0.saturating_sub(header.dts.0);
+            Timestamp::from_micros_lossy(TimestampMicros(now.0 + stream_delay))
+        });
+
+        // TODO - this is where we would take buffer length stats
+        stream.stream.send(AudioPts {
+            pts,
+            audio: packet,
+        });
 
         if let Some(latency) = stream.network_latency() {
             if let Some(clock_delta) = stream.clock_delta.median() {
@@ -143,6 +167,7 @@ impl Receiver {
         }
     }
 
+    /*
     pub fn write_audio(&mut self, buffer: &mut [Frame], pts: Timestamp) -> usize {
         // get stream start timing information:
         let Some(stream) = self.stream.as_mut() else {
@@ -152,15 +177,11 @@ impl Receiver {
         };
 
         // get next packet from queue, or None if missing (packet loss)
-        let packet = stream.queue.pop_front();
+        let queue_item = stream.queue.pop_front();
 
-        // calculate stream timing from packet timing info if present
-        let header_pts = packet.as_ref()
-            .map(|packet| packet.header().pts)
-            .map(Timestamp::from_micros_lossy);
-
-        let stream_pts = header_pts
-            .and_then(|header_pts| stream.adjust_pts(header_pts));
+        let (packet, stream_pts) = queue_item.as_ref()
+            .map(|item| (Some(&item.audio), Some(item.pts)))
+            .unwrap_or_default();
 
         let timing = stream_pts.map(|stream_pts| Timing {
             real: pts,
@@ -181,7 +202,7 @@ impl Receiver {
         }
 
         // pass packet through decode pipeline
-        let frames = stream.pipeline.process(packet.as_ref(), buffer);
+        let frames = stream.pipeline.process(packet, buffer);
 
         // report stats and return
         self.stats.set_buffer_length(
@@ -190,6 +211,7 @@ impl Receiver {
 
         frames
     }
+    */
 }
 
 struct Aggregate<T> {
@@ -249,7 +271,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         pub recv: Receiver,
     }
 
-    let output = Output::new(DeviceOpt {
+    let output = Output::new(&DeviceOpt {
         device: opt.output_device,
         period: opt.output_period
             .map(SampleDuration::from_frame_count)
@@ -260,9 +282,10 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     }).map_err(RunError::OpenAudioDevice)?;
 
     let state = Arc::new(Mutex::new(SharedState {
-        recv: Receiver::new(),
+        recv: Receiver::new(output),
     }));
 
+    /*
     std::thread::spawn({
         let state = state.clone();
         move || {
@@ -297,6 +320,7 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
             }
         }
     });
+    */
 
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;

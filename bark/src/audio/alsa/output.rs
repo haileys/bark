@@ -12,8 +12,8 @@ pub struct Output {
 }
 
 impl Output {
-    pub fn new(opt: DeviceOpt) -> Result<Self, OpenError> {
-        let pcm = config::open_pcm(&opt, Direction::Playback)?;
+    pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
+        let pcm = config::open_pcm(opt, Direction::Playback)?;
         Ok(Output { pcm })
     }
 

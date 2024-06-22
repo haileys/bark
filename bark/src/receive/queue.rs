@@ -1,7 +1,6 @@
 use std::sync::{Arc, Condvar, Mutex};
 
-use bark_core::receive::queue::PacketQueue;
-use bark_protocol::packet::Audio;
+use bark_core::receive::queue::{PacketQueue, AudioPts};
 
 pub struct QueueSender {
     shared: Arc<Shared>,
@@ -32,7 +31,7 @@ pub fn channel(queue: PacketQueue) -> (QueueSender, QueueReceiver) {
 pub struct Disconnected;
 
 impl QueueSender {
-    pub fn send(&self, packet: Audio) -> Result<usize, Disconnected> {
+    pub fn send(&self, packet: AudioPts) -> Result<usize, Disconnected> {
         let mut queue = self.shared.queue.lock().unwrap();
 
         let Some(queue) = queue.as_mut() else {
@@ -48,7 +47,7 @@ impl QueueSender {
 }
 
 impl QueueReceiver {
-    pub fn recv(&self) -> Result<Option<Audio>, Disconnected> {
+    pub fn recv(&self) -> Result<Option<AudioPts>, Disconnected> {
         let mut queue_lock = self.shared.queue.lock().unwrap();
 
         loop {

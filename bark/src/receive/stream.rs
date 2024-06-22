@@ -1,12 +1,13 @@
-use std::{thread, time::Duration};
+use std::{sync::Mutex, thread};
 
-use bark_core::{audio::Frame, receive::{pipeline::Pipeline, queue::PacketQueue, timing::Timing}};
+use bark_core::{audio::Frame, receive::{pipeline::Pipeline, queue::{AudioPts, PacketQueue}, timing::Timing}};
 use bark_protocol::{time::{ClockDelta, SampleDuration, Timestamp, TimestampDelta}, types::{stats::receiver::StreamStatus, AudioPacketHeader, SessionId}, FRAMES_PER_PACKET};
 use bytemuck::Zeroable;
 
-use crate::{audio::Output, time};
-
-use super::{queue::{self, Disconnected, QueueReceiver, QueueSender}, Aggregate};
+use crate::time;
+use crate::receive::output::OutputRef;
+use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};
+use crate::receive::Aggregate;
 
 pub struct Stream {
     tx: QueueSender,
@@ -14,7 +15,7 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn new(header: &AudioPacketHeader, output: Output) -> Self {
+    pub fn new(header: &AudioPacketHeader, output: OutputRef) -> Self {
         let queue = PacketQueue::new(header);
         let (tx, rx) = queue::channel(queue);
 
@@ -34,13 +35,21 @@ impl Stream {
             sid: header.sid,
         }
     }
+
+    pub fn session_id(&self) -> SessionId {
+        self.sid
+    }
+
+    pub fn send(&self, audio: AudioPts) -> Result<usize, Disconnected> {
+        self.tx.send(audio)
+    }
 }
 
 struct StreamState {
     clock_delta: Aggregate<ClockDelta>,
     queue: QueueReceiver,
     pipeline: Pipeline,
-    output: Output,
+    output: OutputRef,
 }
 
 pub struct StreamStats {
@@ -64,32 +73,34 @@ fn run_stream(mut stream: StreamState) {
 
     loop {
         // get next packet from queue, or None if missing (packet loss)
-        let packet = match stream.queue.recv() {
+        let queue_item = match stream.queue.recv() {
             Ok(rx) => rx,
             Err(_) => { return; } // disconnected
         };
 
+        let (packet, stream_pts) = queue_item.as_ref()
+            .map(|item| (Some(&item.audio), Some(item.pts)))
+            .unwrap_or_default();
+
         // pass packet through decode pipeline
         let mut buffer = [Frame::zeroed(); FRAMES_PER_PACKET * 2];
-        let frames = stream.pipeline.process(packet.as_ref(), &mut buffer);
+        let frames = stream.pipeline.process(packet, &mut buffer);
         let buffer = &buffer[0..frames];
 
+        // lock output
+        let Some(output) = stream.output.lock() else {
+            // output has been stolen from us, exit thread
+            break;
+        };
+
         // get current output delay
-        let delay = stream.output.delay().unwrap();
+        let delay = output.delay().unwrap();
         stats.output_latency = delay;
 
         // calculate presentation timestamp based on output delay
         let pts = time::now();
         let pts = Timestamp::from_micros_lossy(pts);
         let pts = pts.add(delay);
-
-        // calculate stream timing from packet timing info if present
-        let header_pts = packet.as_ref()
-            .map(|packet| packet.header().pts)
-            .map(Timestamp::from_micros_lossy);
-
-        let stream_pts = header_pts
-            .and_then(|header_pts| adjust_pts(&stream, header_pts));
 
         let timing = stream_pts.map(|stream_pts| Timing {
             real: pts,
@@ -110,7 +121,7 @@ fn run_stream(mut stream: StreamState) {
         }
 
         // send audio to ALSA
-        match stream.output.write(buffer) {
+        match output.write(buffer) {
             Ok(()) => {}
             Err(e) => {
                 log::error!("error playing audio: {e}");
