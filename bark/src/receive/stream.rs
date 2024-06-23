@@ -1,13 +1,14 @@
-use std::{sync::Mutex, thread};
+use std::thread;
 
 use bark_core::{audio::Frame, receive::{pipeline::Pipeline, queue::{AudioPts, PacketQueue}, timing::Timing}};
-use bark_protocol::{time::{ClockDelta, SampleDuration, Timestamp, TimestampDelta}, types::{stats::receiver::StreamStatus, AudioPacketHeader, SessionId}, FRAMES_PER_PACKET};
+use bark_protocol::time::{SampleDuration, Timestamp, TimestampDelta};
+use bark_protocol::types::{stats::receiver::StreamStatus, AudioPacketHeader, SessionId};
+use bark_protocol::FRAMES_PER_PACKET;
 use bytemuck::Zeroable;
 
 use crate::time;
 use crate::receive::output::OutputRef;
 use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};
-use crate::receive::Aggregate;
 
 pub struct Stream {
     tx: QueueSender,
@@ -20,7 +21,6 @@ impl Stream {
         let (tx, rx) = queue::channel(queue);
 
         let state = StreamState {
-            clock_delta: Aggregate::new(),
             queue: rx,
             pipeline: Pipeline::new(header),
             output,
@@ -46,7 +46,6 @@ impl Stream {
 }
 
 struct StreamState {
-    clock_delta: Aggregate<ClockDelta>,
     queue: QueueReceiver,
     pipeline: Pipeline,
     output: OutputRef,
@@ -129,11 +128,4 @@ fn run_stream(mut stream: StreamState) {
             }
         }
     }
-}
-
-/// Adjust pts from remote time to local time
-fn adjust_pts(stream: &StreamState, pts: Timestamp) -> Option<Timestamp> {
-    stream.clock_delta.median().map(|delta| {
-        pts.adjust(TimestampDelta::from_clock_delta_lossy(delta))
-    })
 }
