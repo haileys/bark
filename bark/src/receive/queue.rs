@@ -1,6 +1,7 @@
 use std::sync::{Arc, Condvar, Mutex};
 
 use bark_core::receive::queue::{PacketQueue, AudioPts};
+use thiserror::Error;
 
 pub struct QueueSender {
     shared: Arc<Shared>,
@@ -27,7 +28,8 @@ pub fn channel(queue: PacketQueue) -> (QueueSender, QueueReceiver) {
     (tx, rx)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Error)]
+#[error("audio receiver thread unexpectedly disconnected")]
 pub struct Disconnected;
 
 impl QueueSender {
