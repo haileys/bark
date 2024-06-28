@@ -11,14 +11,14 @@ opus = ["bark-core/opus"]
 bark-core = { workspace = true }
 bark-protocol = { workspace = true }
 
-alsa = "0.8.1"
+alsa = "0.9"
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 derive_more = { workspace = true }
 env_logger = { version = "0.10", default-features = false, features = ["color", "auto-color", "humantime"] }
-libc = "0.2.147"
+libc = "0.2.155"
 log = { workspace = true }
-nix = { version = "0.26.2", features = ["time", "socket", "net", "poll", "user", "hostname"], default-features = false }
+nix = { version = "0.29", features = ["time", "socket", "net", "poll", "user", "hostname"], default-features = false }
 rand = "0.8.5"
 serde = { version = "1.0.183", features = ["derive"] }
 serde_json = "1.0.105"

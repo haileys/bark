@@ -1,9 +1,9 @@
 use std::io;
 use std::net::{Ipv4Addr, UdpSocket, SocketAddr, SocketAddrV4};
-use std::os::fd::AsRawFd;
+use std::os::fd::AsFd;
 
 use derive_more::Display;
-use nix::poll::{PollFd, PollFlags};
+use nix::poll::{PollFd, PollFlags, PollTimeout};
 use socket2::{Domain, Type};
 use structopt::StructOpt;
 
@@ -77,11 +77,11 @@ impl Socket {
 
     pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, PeerId), io::Error> {
         let mut poll = [
-            PollFd::new(self.tx.as_raw_fd(), PollFlags::POLLIN),
-            PollFd::new(self.rx.as_raw_fd(), PollFlags::POLLIN),
+            PollFd::new(self.tx.as_fd(), PollFlags::POLLIN),
+            PollFd::new(self.rx.as_fd(), PollFlags::POLLIN),
         ];
 
-        nix::poll::poll(&mut poll, -1)?;
+        nix::poll::poll(&mut poll, PollTimeout::NONE)?;
 
         let (nbytes, addr) =
             if poll[0].any() == Some(true) {

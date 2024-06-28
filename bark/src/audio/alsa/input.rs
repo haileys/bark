@@ -2,7 +2,6 @@ use alsa::Direction;
 use alsa::pcm::PCM;
 use bark_core::audio::{Frame, self};
 use bark_protocol::time::{Timestamp, SampleDuration};
-use nix::errno::Errno;
 
 use crate::audio::config::DeviceOpt;
 use crate::audio::alsa::config::{self, OpenError};
@@ -46,13 +45,13 @@ impl Input {
 
             // handle recoverable errors
             match err.errno() {
-                | Errno::EPIPE // underrun
-                | Errno::ESTRPIPE // stream suspended
-                | Errno::EINTR // interrupted syscall
+                | libc::EPIPE // underrun
+                | libc::ESTRPIPE // stream suspended
+                | libc::EINTR // interrupted syscall
                 => {
                     log::warn!("recovering from error: {}", err.errno());
                     // try to recover
-                    self.pcm.recover(err.errno() as i32, false)?;
+                    self.pcm.recover(err.errno(), false)?;
                 }
                 _ => { return Err(err.into()); }
             }
