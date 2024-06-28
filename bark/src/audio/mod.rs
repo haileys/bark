@@ -24,7 +24,7 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn new(opt: DeviceOpt) -> Result<Self, OpenError> {
+    pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
         Ok(Input {
             alsa: alsa::input::Input::new(opt)?,
         })
@@ -40,7 +40,7 @@ pub struct Output {
 }
 
 impl Output {
-    pub fn new(opt: DeviceOpt) -> Result<Self, OpenError> {
+    pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
         Ok(Output {
             alsa: alsa::output::Output::new(opt)?,
         })

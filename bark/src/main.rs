@@ -31,6 +31,8 @@ pub enum RunError {
     Receive(std::io::Error),
     #[error("opening encoder: {0}")]
     OpenEncoder(#[from] bark_core::encode::NewEncoderError),
+    #[error("{0}")]
+    Disconnected(#[from] receive::queue::Disconnected),
 }
 
 fn main() -> Result<(), ExitCode> {

@@ -9,13 +9,26 @@ use bark_protocol::time::{SampleDuration, Timestamp};
 use crate::consts::MAX_QUEUED_DECODE_SEGMENTS;
 
 pub struct PacketQueue {
-    queue: Deque<Option<Audio>, MAX_QUEUED_DECODE_SEGMENTS>,
+    queue: Deque<Option<AudioPts>, MAX_QUEUED_DECODE_SEGMENTS>,
     /// The seq of the first packet in the queue, the rest are implied
     head_seq: u64,
     /// We delay yielding packets when a queue is first started (or reset), to
     /// allow for some buffering. The amount of packets buffered depends on
     /// the difference between dts and pts in the initial packet.
     start: DelayStart,
+}
+
+#[derive(Debug)]
+pub struct AudioPts {
+    /// translated into local time:
+    pub pts: Timestamp,
+    pub audio: Audio,
+}
+
+impl AudioPts {
+    pub fn header(&self) -> &AudioPacketHeader {
+        self.audio.header()
+    }
 }
 
 enum NoSlot {
@@ -32,7 +45,7 @@ impl PacketQueue {
         }
     }
 
-    pub fn pop_front(&mut self) -> Option<Audio> {
+    pub fn pop_front(&mut self) -> Option<AudioPts> {
         if self.start.yield_packet() {
             self.head_seq += 1;
             self.queue.pop_front().flatten()
@@ -41,7 +54,7 @@ impl PacketQueue {
         }
     }
 
-    pub fn insert_packet(&mut self, packet: Audio) {
+    pub fn insert_packet(&mut self, packet: AudioPts) {
         let packet_seq = packet.header().seq;
         let head_seq = self.head_seq;
         let tail_seq = self.head_seq + self.queue.capacity() as u64;
@@ -69,7 +82,7 @@ impl PacketQueue {
         }
     }
 
-    fn queue_slot_mut(&mut self, seq: u64) -> Result<&mut Option<Audio>, NoSlot> {
+    fn queue_slot_mut(&mut self, seq: u64) -> Result<&mut Option<AudioPts>, NoSlot> {
         let idx = seq.checked_sub(self.head_seq).ok_or(NoSlot::InPast)? as usize;
 
         if idx >= self.queue.capacity() {

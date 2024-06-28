@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use bytemuck::{Zeroable, Pod};
 
-use crate::time::{SampleDuration, Timestamp};
+use crate::time::{SampleDuration, TimestampDelta};
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
@@ -17,6 +17,7 @@ pub struct ReceiverStats {
     predict_offset: f64,
 }
 
+#[derive(Clone, Copy)]
 pub enum StreamStatus {
     Seek,
     Sync,
@@ -108,11 +109,8 @@ impl ReceiverStats {
         self.field(ReceiverStatsFlags::HAS_PREDICT_OFFSET, self.predict_offset)
     }
 
-    pub fn set_audio_latency(&mut self, request_pts: Timestamp, packet_pts: Timestamp) {
-        let request_micros = request_pts.to_micros_lossy().0 as f64;
-        let packet_micros = packet_pts.to_micros_lossy().0 as f64;
-
-        self.audio_latency = (request_micros - packet_micros) / 1_000_000.0;
+    pub fn set_audio_latency(&mut self, delta: TimestampDelta) {
+        self.audio_latency = delta.to_seconds();
         self.flags.insert(ReceiverStatsFlags::HAS_AUDIO_LATENCY);
     }
 

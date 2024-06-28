@@ -13,8 +13,8 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn new(opt: DeviceOpt) -> Result<Self, OpenError> {
-        let pcm = config::open_pcm(&opt, Direction::Capture)?;
+    pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
+        let pcm = config::open_pcm(opt, Direction::Capture)?;
         Ok(Input { pcm })
     }
 

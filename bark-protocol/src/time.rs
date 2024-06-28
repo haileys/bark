@@ -123,6 +123,10 @@ impl ClockDelta {
 pub struct TimestampDelta(i64);
 
 impl TimestampDelta {
+    pub fn zero() -> TimestampDelta {
+        TimestampDelta(0)
+    }
+
     pub fn from_clock_delta_lossy(delta: ClockDelta) -> TimestampDelta {
         TimestampDelta((delta.0 * i64::from(SAMPLE_RATE.0)) / 1_000_000)
     }
@@ -133,5 +137,9 @@ impl TimestampDelta {
 
     pub fn as_frames(&self) -> i64 {
         self.0
+    }
+
+    pub fn to_seconds(&self) -> f64 {
+        self.0 as f64 / f64::from(SAMPLE_RATE)
     }
 }
