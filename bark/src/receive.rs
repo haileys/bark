@@ -27,7 +27,6 @@ pub mod queue;
 pub mod stream;
 
 pub struct Receiver {
-    stats: ReceiverStats,
     stream: Option<Stream>,
     output: OwnedOutput,
 }
@@ -72,7 +71,6 @@ impl Receiver {
     pub fn new(output: Output) -> Self {
         Receiver {
             stream: None,
-            stats: ReceiverStats::new(),
             output: OwnedOutput::new(output),
         }
     }
@@ -125,10 +123,6 @@ impl Receiver {
         let network_latency = Duration::from_micros(rtt_usec / 2);
         stream.latency.observe(network_latency);
 
-        if let Some(latency) = stream.network_latency() {
-            self.stats.set_network_latency(latency);
-        }
-
         let clock_delta = ClockDelta::from_time_packet(&packet);
         stream.clock_delta.observe(clock_delta);
     }
@@ -146,7 +140,6 @@ impl Receiver {
             // new stream is taking over! switch over to it
             log::info!("new stream beginning: sid={}", header.sid.0);
             self.stream = Some(stream);
-            self.stats.clear();
         }
 
         self.stream.as_mut().unwrap()
