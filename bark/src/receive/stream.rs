@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use bark_core::{audio::Frame, receive::{pipeline::Pipeline, queue::{AudioPts, PacketQueue}, timing::Timing}};
@@ -10,29 +11,34 @@ use crate::time;
 use crate::receive::output::OutputRef;
 use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};
 
-pub struct Stream {
+pub struct DecodeStream {
     tx: QueueSender,
     sid: SessionId,
+    stats: Arc<Mutex<DecodeStats>>,
 }
 
-impl Stream {
+impl DecodeStream {
     pub fn new(header: &AudioPacketHeader, output: OutputRef) -> Self {
         let queue = PacketQueue::new(header);
         let (tx, rx) = queue::channel(queue);
 
-        let state = StreamState {
+        let state = State {
             queue: rx,
             pipeline: Pipeline::new(header),
             output,
         };
 
-        thread::spawn(move || {
-            run_stream(state);
+        let stats = Arc::new(Mutex::new(DecodeStats::default()));
+
+        thread::spawn({
+            let stats = stats.clone();
+            move || run_stream(state, stats)
         });
 
-        Stream {
+        DecodeStream {
             tx,
             sid: header.sid,
+            stats,
         }
     }
 
@@ -43,32 +49,39 @@ impl Stream {
     pub fn send(&self, audio: AudioPts) -> Result<usize, Disconnected> {
         self.tx.send(audio)
     }
+
+    pub fn stats(&self) -> DecodeStats {
+        self.stats.lock().unwrap().clone()
+    }
 }
 
-struct StreamState {
+struct State {
     queue: QueueReceiver,
     pipeline: Pipeline,
     output: OutputRef,
 }
 
-pub struct StreamStats {
-    status: StreamStatus,
-    audio_latency: TimestampDelta,
-    output_latency: SampleDuration,
+#[derive(Clone)]
+pub struct DecodeStats {
+    pub status: StreamStatus,
+    pub buffered: SampleDuration,
+    pub audio_latency: TimestampDelta,
+    pub output_latency: SampleDuration,
 }
 
-impl Default for StreamStats {
+impl Default for DecodeStats {
     fn default() -> Self {
-        StreamStats {
+        DecodeStats {
             status: StreamStatus::Seek,
+            buffered: SampleDuration::zero(),
             audio_latency: TimestampDelta::zero(),
             output_latency: SampleDuration::zero(),
         }
     }
 }
 
-fn run_stream(mut stream: StreamState) {
-    let mut stats = StreamStats::default();
+fn run_stream(mut stream: State, stats_tx: Arc<Mutex<DecodeStats>>) {
+    let mut stats = DecodeStats::default();
 
     loop {
         // get next packet from queue, or None if missing (packet loss)
@@ -118,6 +131,9 @@ fn run_stream(mut stream: StreamState) {
 
             stats.audio_latency = timing.real.delta(timing.play);
         }
+
+        // update stats
+        *stats_tx.lock().unwrap() = stats.clone();
 
         // send audio to ALSA
         match output.write(buffer) {

@@ -138,4 +138,8 @@ impl TimestampDelta {
     pub fn as_frames(&self) -> i64 {
         self.0
     }
+
+    pub fn to_seconds(&self) -> f64 {
+        self.0 as f64 / f64::from(SAMPLE_RATE)
+    }
 }

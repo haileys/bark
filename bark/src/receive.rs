@@ -14,13 +14,13 @@ use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::Output;
 use crate::receive::output::OutputRef;
-use crate::receive::stream::Stream as ReceiveStream;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::{time, stats, thread};
 use crate::RunError;
 
 use self::output::OwnedOutput;
 use self::queue::Disconnected;
+use self::stream::DecodeStream;
 
 pub mod output;
 pub mod queue;
@@ -34,20 +34,22 @@ pub struct Receiver {
 
 struct Stream {
     sid: SessionId,
+    decode: DecodeStream,
     latency: Aggregate<Duration>,
     clock_delta: Aggregate<ClockDelta>,
-    stream: ReceiveStream,
+    predict_offset: Aggregate<i64>,
 }
 
 impl Stream {
     pub fn new(header: &AudioPacketHeader, output: OutputRef) -> Self {
-        let stream = ReceiveStream::new(header, output);
+        let decode = DecodeStream::new(header, output);
 
         Stream {
             sid: header.sid,
+            decode,
             latency: Aggregate::new(),
             clock_delta: Aggregate::new(),
-            stream,
+            predict_offset: Aggregate::new(),
         }
     }
 
@@ -60,6 +62,10 @@ impl Stream {
     pub fn network_latency(&self) -> Option<Duration> {
         self.latency.median()
     }
+
+    pub fn predict_offset(&self) -> Option<i64> {
+        self.predict_offset.median()
+    }
 }
 
 impl Receiver {
@@ -71,8 +77,26 @@ impl Receiver {
         }
     }
 
-    pub fn stats(&self) -> &ReceiverStats {
-        &self.stats
+    pub fn stats(&self) -> ReceiverStats {
+        let mut stats = ReceiverStats::new();
+
+        if let Some(stream) = &self.stream {
+            let decode = stream.decode.stats();
+            stats.set_stream(decode.status);
+            stats.set_buffer_length(decode.buffered);
+            stats.set_audio_latency(decode.audio_latency);
+            stats.set_output_latency(decode.output_latency);
+
+            if let Some(latency) = stream.network_latency() {
+                stats.set_network_latency(latency);
+            }
+
+            if let Some(predict) = stream.predict_offset() {
+                stats.set_predict_offset(predict);
+            }
+        }
+
+        stats
     }
 
     pub fn current_session(&self) -> Option<SessionId> {
@@ -146,7 +170,7 @@ impl Receiver {
         });
 
         // TODO - this is where we would take buffer length stats
-        stream.stream.send(AudioPts {
+        stream.decode.send(AudioPts {
             pts,
             audio: packet,
         })?;
@@ -157,7 +181,7 @@ impl Receiver {
                 let delta_usec = clock_delta.as_micros();
                 let predict_dts = (now.0 - latency_usec).checked_add_signed(-delta_usec).unwrap();
                 let predict_diff = predict_dts as i64 - packet_dts.0 as i64;
-                self.stats.set_predict_offset(predict_diff)
+                stream.predict_offset.observe(predict_diff);
             }
         }
 
@@ -274,7 +298,8 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
             Some(PacketKind::StatsRequest(_)) => {
                 // let state = state.lock().unwrap();
                 let sid = receiver.current_session().unwrap_or(SessionId::zeroed());
-                let receiver = *receiver.stats();
+                let receiver = receiver.stats();
+                println!("{:?}", receiver);
 
                 let reply = StatsReply::receiver(sid, receiver, node)
                     .expect("allocate StatsReply packet");
