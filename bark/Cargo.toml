@@ -27,5 +27,6 @@ static_assertions = "1.1"
 structopt = "0.3"
 termcolor = "1.4"
 thiserror = { workspace = true }
+tokio = { version = "1.40", features = ["rt", "net", "sync"] }
 toml = "0.8"
 xdg = "2.5"
