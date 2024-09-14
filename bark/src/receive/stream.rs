@@ -3,7 +3,8 @@ use std::thread;
 
 use bark_core::{audio::Frame, receive::{pipeline::Pipeline, queue::{AudioPts, PacketQueue}, timing::Timing}};
 use bark_protocol::time::{SampleDuration, Timestamp, TimestampDelta};
-use bark_protocol::types::{stats::receiver::StreamStatus, AudioPacketHeader, SessionId};
+use bark_protocol::types::stats::receiver::StreamStatus;
+use bark_protocol::types::AudioPacketHeader;
 use bark_protocol::FRAMES_PER_PACKET;
 use bytemuck::Zeroable;
 
@@ -13,7 +14,6 @@ use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};
 
 pub struct DecodeStream {
     tx: QueueSender,
-    sid: SessionId,
     stats: Arc<Mutex<DecodeStats>>,
 }
 
@@ -37,13 +37,8 @@ impl DecodeStream {
 
         DecodeStream {
             tx,
-            sid: header.sid,
             stats,
         }
-    }
-
-    pub fn session_id(&self) -> SessionId {
-        self.sid
     }
 
     pub fn send(&self, audio: AudioPts) -> Result<usize, Disconnected> {
