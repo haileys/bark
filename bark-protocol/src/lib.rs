@@ -13,11 +13,11 @@ pub const FRAMES_PER_PACKET: usize = 120; // 2.5ms at 48khz, compatible with opu
 pub const SAMPLES_PER_PACKET: usize = CHANNELS.0 as usize * FRAMES_PER_PACKET;
 
 #[derive(Copy, Clone, Debug, Into)]
-#[into(types(u64, u128, i64, f64))]
+#[into(u64, u128, i64, f64)]
 pub struct SampleRate(pub u32);
 
 #[derive(Copy, Clone, Debug, Into)]
-#[into(types(usize, u32, u64))]
+#[into(usize, u32, u64)]
 pub struct ChannelCount(pub u16);
 
 impl From<SampleRate> for usize {
