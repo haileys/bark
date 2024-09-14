@@ -6,7 +6,7 @@ low latency multi-receiver synchronised audio streaming for local networks.
 
 * Built-in time synchronisation and latency detection - no high precision NTP required!
 
-* Adjusts audio playback rate with the Speex resampler to stay in sync
+* Adjusts audio playback rate with soxr to stay in sync
 
 ### Running the server under Pipewire or Pulse
 
