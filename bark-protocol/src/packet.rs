@@ -1,5 +1,4 @@
 use core::mem::size_of;
-use core::ops::Range;
 
 use bytemuck::Zeroable;
 
@@ -43,7 +42,6 @@ impl Packet {
     pub fn parse(self) -> Option<PacketKind> {
         match self.header().magic {
             Magic::AUDIO => Audio::parse(self).map(PacketKind::Audio),
-            Magic::TIME => Time::parse(self).map(PacketKind::Time),
             Magic::STATS_REQ => StatsRequest::parse(self).map(PacketKind::StatsRequest),
             Magic::STATS_REPLY => StatsReply::parse(self).map(PacketKind::StatsReply),
             _ => None,
@@ -81,7 +79,6 @@ impl Packet {
 #[derive(Debug)]
 pub enum PacketKind {
     Audio(Audio),
-    Time(Time),
     StatsRequest(StatsRequest),
     StatsReply(StatsReply),
 }
@@ -142,55 +139,6 @@ impl Audio {
         let header_size = size_of::<types::AudioPacketHeader>();
         let header_bytes = &mut self.0.as_bytes_mut()[0..header_size];
         bytemuck::from_bytes_mut(header_bytes)
-    }
-}
-
-#[derive(Debug)]
-pub struct Time(Packet);
-
-impl Time {
-    // packet delay has a linear relationship to packet size - it's important
-    // that time packets experience as similar delay as possible to audio
-    // packets for most accurate synchronisation, so we pad this packet out
-    // to the same size as the audio packet
-
-    // TODO fix this
-    // const LENGTH: usize = Audio::LENGTH;
-    const LENGTH: usize = size_of::<types::TimePacket>();
-
-    // time packets are padded so that they are
-    // the same length as audio packets:
-    const DATA_RANGE: Range<usize> =
-        0..size_of::<types::TimePacket>();
-
-    pub fn allocate() -> Result<Self, AllocError> {
-        Ok(Time(Packet::allocate(Magic::TIME, Self::LENGTH)?))
-    }
-
-    pub fn parse(packet: Packet) -> Option<Self> {
-        // we add some padding to the time packet so that it is the same
-        // length as audio packets
-        if packet.len() < Self::LENGTH {
-            return None;
-        }
-
-        if packet.header().flags != 0 {
-            return None;
-        }
-
-        Some(Time(packet))
-    }
-
-    pub fn as_packet(&self) -> &Packet {
-        &self.0
-    }
-
-    pub fn data(&self) -> &types::TimePacket {
-        bytemuck::from_bytes(&self.0.as_bytes()[Self::DATA_RANGE])
-    }
-
-    pub fn data_mut(&mut self) -> &mut types::TimePacket {
-        bytemuck::from_bytes_mut(&mut self.0.as_bytes_mut()[Self::DATA_RANGE])
     }
 }
 

@@ -10,7 +10,6 @@ pub struct Magic(u32);
 
 impl Magic {
     pub const AUDIO: Magic       = Magic(0x00a79ae2);
-    pub const TIME: Magic        = Magic(0x01a79ae2);
     pub const STATS_REQ: Magic   = Magic(0x02a79ae2);
     pub const STATS_REPLY: Magic = Magic(0x03a79ae2);
 }

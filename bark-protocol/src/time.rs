@@ -1,4 +1,3 @@
-use crate::packet;
 use crate::types::TimestampMicros;
 use crate::{SAMPLE_RATE, FRAMES_PER_PACKET};
 
@@ -90,34 +89,6 @@ impl SampleDuration {
     }
 }
 
-/// The difference between two machine clocks in microseconds
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Default)]
-pub struct ClockDelta(i64);
-
-impl ClockDelta {
-    pub fn as_micros(&self) -> i64 {
-        self.0
-    }
-
-    /// Calculates clock difference between machines based on a complete TimePacket
-    pub fn from_time_packet(packet: &packet::Time) -> ClockDelta {
-        let time = packet.data();
-
-        // all fields should be non-zero here, it's a programming error if
-        // they're not.
-        assert!(time.stream_1.0 != 0);
-        assert!(time.receive_2.0 != 0);
-        assert!(time.stream_3.0 != 0);
-
-        let t1_usec = time.stream_1.0 as i64;
-        let t2_usec = time.receive_2.0 as i64;
-        let t3_usec = time.stream_3.0 as i64;
-
-        // algorithm from the Precision Time Protocol page on Wikipedia
-        ClockDelta((t2_usec - t1_usec + t2_usec - t3_usec) / 2)
-    }
-}
-
 /// A duration with denominator SAMPLE_RATE, but it's signed :)
 #[derive(Debug, Copy, Clone)]
 pub struct TimestampDelta(i64);
@@ -125,10 +96,6 @@ pub struct TimestampDelta(i64);
 impl TimestampDelta {
     pub fn zero() -> TimestampDelta {
         TimestampDelta(0)
-    }
-
-    pub fn from_clock_delta_lossy(delta: ClockDelta) -> TimestampDelta {
-        TimestampDelta((delta.0 * i64::from(SAMPLE_RATE.0)) / 1_000_000)
     }
 
     pub fn abs(&self) -> SampleDuration {
