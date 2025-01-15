@@ -15,4 +15,4 @@ bytemuck = { version = "1.18", features = ["derive", "must_cast"] }
 derive_more = { version = "1.0", features = ["into", "display"] }
 heapless = "0.8"
 log = "0.4"
-thiserror = "1.0"
+thiserror = "2.0"
