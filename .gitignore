@@ -1,3 +1,5 @@
+/.envrc
+/.vscode
 /dist
 /target
 /bark.toml
