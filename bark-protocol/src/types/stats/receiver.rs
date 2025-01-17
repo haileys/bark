@@ -14,7 +14,6 @@ pub struct ReceiverStats {
     buffer_length: f64,
     output_latency: f64,
     network_latency: f64,
-    predict_offset: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -104,11 +103,6 @@ impl ReceiverStats {
         self.field(ReceiverStatsFlags::HAS_NETWORK_LATENCY, self.network_latency)
     }
 
-    /// Running prediction offset in seconds
-    pub fn predict_offset(&self) -> Option<f64> {
-        self.field(ReceiverStatsFlags::HAS_PREDICT_OFFSET, self.predict_offset)
-    }
-
     pub fn set_audio_latency(&mut self, delta: TimestampDelta) {
         self.audio_latency = delta.to_seconds();
         self.flags.insert(ReceiverStatsFlags::HAS_AUDIO_LATENCY);
@@ -127,10 +121,5 @@ impl ReceiverStats {
     pub fn set_network_latency(&mut self, latency: core::time::Duration) {
         self.network_latency = latency.as_micros() as f64 / 1_000_000.0;
         self.flags.insert(ReceiverStatsFlags::HAS_NETWORK_LATENCY);
-    }
-
-    pub fn set_predict_offset(&mut self, diff_usec: i64) {
-        self.predict_offset = diff_usec as f64 / 1_000_000.0;
-        self.flags.insert(ReceiverStatsFlags::HAS_PREDICT_OFFSET);
     }
 }

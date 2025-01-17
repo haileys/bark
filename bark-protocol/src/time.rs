@@ -75,9 +75,12 @@ impl SampleDuration {
     }
 
     pub fn to_std_duration_lossy(&self) -> core::time::Duration {
+        core::time::Duration::from_micros(self.to_micros_lossy())
+    }
+
+    pub fn to_micros_lossy(&self) -> u64 {
         let usecs = (u128::from(self.0) * 1_000_000) / u128::from(SAMPLE_RATE);
-        let usecs = u64::try_from(usecs).expect("can't narrow usecs to u64");
-        core::time::Duration::from_micros(usecs)
+        u64::try_from(usecs).expect("can't narrow usecs to u64")
     }
 
     pub fn add(&self, other: SampleDuration) -> Self {
@@ -104,6 +107,10 @@ impl TimestampDelta {
 
     pub fn as_frames(&self) -> i64 {
         self.0
+    }
+
+    pub fn to_micros_lossy(&self) -> i64 {
+        self.0 * 1_000_000 / i64::from(SAMPLE_RATE.0)
     }
 
     pub fn to_seconds(&self) -> f64 {

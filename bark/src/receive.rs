@@ -15,7 +15,7 @@ use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::Output;
 use crate::receive::output::OutputRef;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
-use crate::stats::{self, server::MetricsServer};
+use crate::stats::{self, server::MetricsSender};
 use crate::{thread, time};
 use crate::RunError;
 
@@ -30,41 +30,37 @@ pub mod stream;
 pub struct Receiver {
     stream: Option<Stream>,
     output: OwnedOutput,
+    metrics: MetricsSender,
 }
 
 struct Stream {
     sid: SessionId,
     decode: DecodeStream,
     latency: Aggregate<Duration>,
-    predict_offset: Aggregate<i64>,
 }
 
 impl Stream {
-    pub fn new(header: &AudioPacketHeader, output: OutputRef) -> Self {
-        let decode = DecodeStream::new(header, output);
+    pub fn new(header: &AudioPacketHeader, output: OutputRef, metrics: MetricsSender) -> Self {
+        let decode = DecodeStream::new(header, output, metrics);
 
         Stream {
             sid: header.sid,
             decode,
             latency: Aggregate::new(),
-            predict_offset: Aggregate::new(),
         }
     }
 
     pub fn network_latency(&self) -> Option<Duration> {
         self.latency.median()
     }
-
-    pub fn predict_offset(&self) -> Option<i64> {
-        self.predict_offset.median()
-    }
 }
 
 impl Receiver {
-    pub fn new(output: Output) -> Self {
+    pub fn new(output: Output, metrics: MetricsSender) -> Self {
         Receiver {
             stream: None,
             output: OwnedOutput::new(output),
+            metrics,
         }
     }
 
@@ -80,10 +76,6 @@ impl Receiver {
 
             if let Some(latency) = stream.network_latency() {
                 stats.set_network_latency(latency);
-            }
-
-            if let Some(predict) = stream.predict_offset() {
-                stats.set_predict_offset(predict);
             }
         }
 
@@ -102,7 +94,7 @@ impl Receiver {
 
         if new_stream {
             // start new stream
-            let stream = Stream::new(header, self.output.steal());
+            let stream = Stream::new(header, self.output.steal(), self.metrics.clone());
 
             // new stream is taking over! switch over to it
             log::info!("new stream beginning: sid={}", header.sid.0);
@@ -130,7 +122,9 @@ impl Receiver {
         })?;
 
         let latency_usec = now.0.saturating_sub(packet_dts.0);
-        stream.latency.observe(Duration::from_micros(latency_usec));
+        let latency = Duration::from_micros(latency_usec);
+        stream.latency.observe(latency);
+        self.metrics.observe_network_latency(latency);
 
         Ok(())
     }
@@ -196,12 +190,12 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
             .unwrap_or(DEFAULT_BUFFER),
     }).map_err(RunError::OpenAudioDevice)?;
 
-    let receiver = Receiver::new(output);
-
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
     let metrics = stats::server::start(&metrics).await?;
+
+    let receiver = Receiver::new(output, metrics.clone());
 
     thread::start("bark/network", move || {
         network_thread(socket, metrics, receiver)
@@ -210,7 +204,7 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
 
 fn network_thread(
     socket: Socket,
-    metrics: MetricsServer,
+    metrics: MetricsSender,
     mut receiver: Receiver,
 ) -> Result<(), RunError> {
     let node = stats::node::get();

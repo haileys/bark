@@ -8,6 +8,7 @@ use bark_protocol::types::AudioPacketHeader;
 use bark_protocol::FRAMES_PER_PACKET;
 use bytemuck::Zeroable;
 
+use crate::stats::server::MetricsSender;
 use crate::time;
 use crate::receive::output::OutputRef;
 use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};
@@ -18,7 +19,7 @@ pub struct DecodeStream {
 }
 
 impl DecodeStream {
-    pub fn new(header: &AudioPacketHeader, output: OutputRef) -> Self {
+    pub fn new(header: &AudioPacketHeader, output: OutputRef, metrics: MetricsSender) -> Self {
         let queue = PacketQueue::new(header);
         let (tx, rx) = queue::channel(queue);
 
@@ -26,6 +27,7 @@ impl DecodeStream {
             queue: rx,
             pipeline: Pipeline::new(header),
             output,
+            metrics,
         };
 
         let stats = Arc::new(Mutex::new(DecodeStats::default()));
@@ -54,6 +56,7 @@ struct State {
     queue: QueueReceiver,
     pipeline: Pipeline,
     output: OutputRef,
+    metrics: MetricsSender,
 }
 
 #[derive(Clone)]
@@ -103,6 +106,7 @@ fn run_stream(mut stream: State, stats_tx: Arc<Mutex<DecodeStats>>) {
         // get current output delay
         let delay = output.delay().unwrap();
         stats.output_latency = delay;
+        stream.metrics.observe_buffer_length(delay);
 
         // calculate presentation timestamp based on output delay
         let pts = time::now();
@@ -124,7 +128,9 @@ fn run_stream(mut stream: State, stats_tx: Arc<Mutex<DecodeStats>>) {
                 stats.status = StreamStatus::Sync;
             }
 
-            stats.audio_latency = timing.real.delta(timing.play);
+            let audio_offset = timing.real.delta(timing.play);
+            stats.audio_latency = audio_offset;
+            stream.metrics.observe_audio_offset(audio_offset);
         }
 
         // update stats
