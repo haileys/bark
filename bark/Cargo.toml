@@ -12,7 +12,7 @@ bark-core = { workspace = true }
 bark-protocol = { workspace = true }
 
 alsa = "0.9"
-axum = { version = "0.8.1", features = ["macros"] }
+axum = "0.8"
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 derive_more = { workspace = true }
@@ -31,3 +31,4 @@ thiserror = { workspace = true }
 tokio = { version = "1.40", features = ["rt", "net", "sync"] }
 toml = "0.8"
 xdg = "2.5"
+futures = "0.3.31"

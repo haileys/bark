@@ -18,6 +18,7 @@ use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId};
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
+use crate::stats::server::MetricsOpt;
 use crate::{stats, time, config};
 use crate::RunError;
 
@@ -53,7 +54,7 @@ pub struct StreamOpt {
     pub format: config::Format,
 }
 
-pub fn run(opt: StreamOpt) -> Result<(), RunError> {
+pub fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
     let input = Input::new(&DeviceOpt {
         device: opt.input_device,
         period: opt.input_period

@@ -15,10 +15,19 @@ use thiserror::Error;
 
 #[derive(StructOpt)]
 #[structopt(version = version())]
-enum Opt {
+enum Cmd {
     Stream(stream::StreamOpt),
     Receive(receive::ReceiveOpt),
     Stats(stats::StatsOpt),
+}
+
+#[derive(StructOpt)]
+#[structopt(version = version())]
+struct Opt {
+    #[structopt(flatten)]
+    metrics: stats::server::MetricsOpt,
+    #[structopt(flatten)]
+    cmd: Cmd,
 }
 
 #[derive(Debug, Error)]
@@ -31,11 +40,14 @@ pub enum RunError {
     Receive(std::io::Error),
     #[error("opening encoder: {0}")]
     OpenEncoder(#[from] bark_core::encode::NewEncoderError),
-    #[error("{0}")]
+    #[error(transparent)]
     Disconnected(#[from] receive::queue::Disconnected),
+    #[error(transparent)]
+    Metrics(#[from] stats::server::StartError)
 }
 
-fn main() -> Result<(), ExitCode> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), ExitCode> {
     init_log();
 
     if let Some(config) = config::read() {
@@ -44,10 +56,10 @@ fn main() -> Result<(), ExitCode> {
 
     let opt = Opt::from_args();
 
-    let result = match opt {
-        Opt::Stream(opt) => stream::run(opt),
-        Opt::Receive(opt) => receive::run(opt),
-        Opt::Stats(opt) => stats::run(opt),
+    let result = match opt.cmd {
+        Cmd::Stream(cmd) => stream::run(cmd, opt.metrics),
+        Cmd::Receive(cmd) => receive::run(cmd, opt.metrics).await,
+        Cmd::Stats(cmd) => stats::run(cmd),
     };
 
     result.map_err(|err| {

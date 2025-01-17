@@ -14,6 +14,8 @@ pub struct Config {
     source: Source,
     #[serde(default)]
     receive: Receive,
+    #[serde(default)]
+    metrics: Metrics,
 }
 
 #[derive(Deserialize, Default)]
@@ -22,6 +24,11 @@ pub struct Source {
     input: Device,
     delay_ms: Option<u64>,
     format: Option<Format>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct Metrics {
+    listen: Option<SocketAddr>,
 }
 
 #[derive(Deserialize)]
@@ -95,6 +102,7 @@ pub fn load_into_env(config: &Config) {
     set_env_option("BARK_RECEIVE_OUTPUT_DEVICE", config.receive.output.device.as_ref());
     set_env_option("BARK_RECEIVE_OUTPUT_PERIOD", config.receive.output.period);
     set_env_option("BARK_RECEIVE_OUTPUT_BUFFER", config.receive.output.buffer);
+    set_env_option("BARK_METRICS_LISTEN", config.metrics.listen);
 }
 
 fn load_file(path: &Path) -> Option<Config> {

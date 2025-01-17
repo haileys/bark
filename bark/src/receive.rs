@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use bytemuck::Zeroable;
 use structopt::StructOpt;
+use tokio::sync::oneshot;
+use futures::future::{Future, FutureExt};
 
 use bark_core::receive::queue::AudioPts;
 
@@ -15,7 +17,8 @@ use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::Output;
 use crate::receive::output::OutputRef;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
-use crate::{stats, thread, time};
+use crate::stats::{self, server::MetricsServer};
+use crate::{thread, time};
 use crate::RunError;
 
 use self::output::OwnedOutput;
@@ -184,9 +187,7 @@ pub struct ReceiveOpt {
     pub output_buffer: Option<u64>,
 }
 
-pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
-    let node = stats::node::get();
-
+pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<(), RunError> {
     let output = Output::new(&DeviceOpt {
         device: opt.output_device,
         period: opt.output_period
@@ -202,10 +203,35 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
-    let protocol = ProtocolSocket::new(socket);
+    let metrics = stats::server::start(&metrics).await?;
+
+    start_network_thread(socket, metrics, receiver).await
+}
+
+fn start_network_thread(socket: Socket, metrics: MetricsServer, receiver: Receiver)
+    -> impl Future<Output = Result<(), RunError>>
+{
+    let (tx, rx) = oneshot::channel();
+
+    let thread = std::thread::spawn(move || {
+        let _ = tx.send(network_thread(socket, metrics, receiver));
+    });
+
+    rx.map(|result| {
+        match result {
+            Ok(result) => result,
+            Err(_) => { panic!("network thread panicked"); }
+        }
+    })
+}
+
+fn network_thread(socket: Socket, metrics: MetricsServer, mut receiver: Receiver) -> Result<(), RunError> {
+    let node = stats::node::get();
 
     thread::set_name("bark/network");
     thread::set_realtime_priority();
+
+    let protocol = ProtocolSocket::new(socket);
 
     loop {
         let (packet, peer) = protocol.recv_from().map_err(RunError::Receive)?;
