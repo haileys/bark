@@ -6,16 +6,16 @@ use structopt::StructOpt;
 
 use bark_core::receive::queue::AudioPts;
 
-use bark_protocol::time::{Timestamp, SampleDuration, TimestampDelta, ClockDelta};
-use bark_protocol::types::{AudioPacketHeader, ReceiverId, SessionId, TimePhase, TimestampMicros};
+use bark_protocol::time::{Timestamp, SampleDuration};
+use bark_protocol::types::{AudioPacketHeader, SessionId};
 use bark_protocol::types::stats::receiver::ReceiverStats;
-use bark_protocol::packet::{Audio, Time, PacketKind, StatsReply};
+use bark_protocol::packet::{Audio, PacketKind, StatsReply};
 
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::Output;
 use crate::receive::output::OutputRef;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
-use crate::{time, stats, thread};
+use crate::{stats, thread, time};
 use crate::RunError;
 
 use self::output::OwnedOutput;
@@ -35,7 +35,6 @@ struct Stream {
     sid: SessionId,
     decode: DecodeStream,
     latency: Aggregate<Duration>,
-    clock_delta: Aggregate<ClockDelta>,
     predict_offset: Aggregate<i64>,
 }
 
@@ -47,15 +46,8 @@ impl Stream {
             sid: header.sid,
             decode,
             latency: Aggregate::new(),
-            clock_delta: Aggregate::new(),
             predict_offset: Aggregate::new(),
         }
-    }
-
-    pub fn adjust_pts(&self, pts: Timestamp) -> Option<Timestamp> {
-        self.clock_delta.median().map(|delta| {
-            pts.adjust(TimestampDelta::from_clock_delta_lossy(delta))
-        })
     }
 
     pub fn network_latency(&self) -> Option<Duration> {
@@ -101,32 +93,6 @@ impl Receiver {
         self.stream.as_ref().map(|s| s.sid)
     }
 
-    pub fn receive_time(&mut self, packet: Time) {
-        let Some(stream) = self.stream.as_mut() else {
-            // no stream, nothing we can do with a time packet
-            return;
-        };
-
-        if stream.sid != packet.data().sid {
-            // not relevant to our stream, ignore
-            return;
-        }
-
-        let stream_1_usec = packet.data().stream_1.0;
-        let stream_3_usec = packet.data().stream_3.0;
-
-        let Some(rtt_usec) = stream_3_usec.checked_sub(stream_1_usec) else {
-            // invalid packet, ignore
-            return;
-        };
-
-        let network_latency = Duration::from_micros(rtt_usec / 2);
-        stream.latency.observe(network_latency);
-
-        let clock_delta = ClockDelta::from_time_packet(&packet);
-        stream.clock_delta.observe(clock_delta);
-    }
-
     fn prepare_stream(&mut self, header: &AudioPacketHeader) -> &mut Stream {
         let new_stream = match &self.stream {
             Some(stream) => stream.sid < header.sid,
@@ -149,18 +115,12 @@ impl Receiver {
         let now = time::now();
 
         let header = packet.header();
-        let stream = self.prepare_stream(header);
-
         let packet_dts = header.dts;
+
+        let stream = self.prepare_stream(header);
 
         // translate presentation timestamp of this packet:
         let pts = Timestamp::from_micros_lossy(header.pts);
-        let pts = stream.adjust_pts(pts).unwrap_or_else(|| {
-            // if we don't yet have the clock information to adjust timestamps,
-            // default to packet pts-dts, added to our current local time
-            let stream_delay = header.pts.0.saturating_sub(header.dts.0);
-            Timestamp::from_micros_lossy(TimestampMicros(now.0 + stream_delay))
-        });
 
         // TODO - this is where we would take buffer length stats
         stream.decode.send(AudioPts {
@@ -168,15 +128,8 @@ impl Receiver {
             audio: packet,
         })?;
 
-        if let Some(latency) = stream.network_latency() {
-            if let Some(clock_delta) = stream.clock_delta.median() {
-                let latency_usec = u64::try_from(latency.as_micros()).unwrap();
-                let delta_usec = clock_delta.as_micros();
-                let predict_dts = (now.0 - latency_usec).checked_add_signed(-delta_usec).unwrap();
-                let predict_diff = predict_dts as i64 - packet_dts.0 as i64;
-                stream.predict_offset.observe(predict_diff);
-            }
-        }
+        let latency_usec = now.0.saturating_sub(packet_dts.0);
+        stream.latency.observe(Duration::from_micros(latency_usec));
 
         Ok(())
     }
@@ -232,7 +185,6 @@ pub struct ReceiveOpt {
 }
 
 pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
-    let receiver_id = generate_receiver_id();
     let node = stats::node::get();
 
     let output = Output::new(&DeviceOpt {
@@ -259,32 +211,6 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
         let (packet, peer) = protocol.recv_from().map_err(RunError::Receive)?;
 
         match packet.parse() {
-            Some(PacketKind::Time(mut time)) => {
-                if !time.data().rid.matches(&receiver_id) {
-                    // not for us - time packets are usually unicast,
-                    // but there can be multiple receivers on a machine
-                    continue;
-                }
-
-                match time.data().phase() {
-                    Some(TimePhase::Broadcast) => {
-                        let data = time.data_mut();
-                        data.receive_2 = time::now();
-                        data.rid = receiver_id;
-
-                        protocol.send_to(time.as_packet(), peer)
-                            .expect("reply to time packet");
-                    }
-                    Some(TimePhase::StreamReply) => {
-                        // let mut state = state.lock().unwrap();
-                        receiver.receive_time(time);
-                    }
-                    _ => {
-                        // not for us - must be destined for another process
-                        // on same machine
-                    }
-                }
-            }
             Some(PacketKind::Audio(packet)) => {
                 receiver.receive_audio(packet)?;
             }
@@ -307,8 +233,4 @@ pub fn run(opt: ReceiveOpt) -> Result<(), RunError> {
             }
         }
     }
-}
-
-pub fn generate_receiver_id() -> ReceiverId {
-    ReceiverId(rand::random())
 }

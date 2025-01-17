@@ -12,8 +12,8 @@ use structopt::StructOpt;
 use bark_core::encode::opus::OpusEncoder;
 
 use bark_protocol::time::SampleDuration;
-use bark_protocol::packet::{self, Audio, StatsReply, PacketKind};
-use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId, ReceiverId, TimePhase};
+use bark_protocol::packet::{Audio, StatsReply, PacketKind};
+use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId};
 
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::Input;
@@ -140,32 +140,6 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
         }
     });
 
-    // set up t1 sender thread
-    std::thread::spawn({
-        crate::thread::set_name("bark/clock");
-        crate::thread::set_realtime_priority();
-
-        let protocol = Arc::clone(&protocol);
-        move || {
-            let mut time = packet::Time::allocate()
-                .expect("allocate Time packet");
-
-            // set up packet
-            let data = time.data_mut();
-            data.sid = sid;
-            data.rid = ReceiverId::broadcast();
-
-            loop {
-                time.data_mut().stream_1 = time::now();
-
-                protocol.broadcast(time.as_packet())
-                    .expect("broadcast time");
-
-                std::thread::sleep(Duration::from_millis(200));
-            }
-        }
-    });
-
     crate::thread::set_name("bark/network");
     crate::thread::set_realtime_priority();
 
@@ -180,26 +154,6 @@ pub fn run(opt: StreamOpt) -> Result<(), RunError> {
                     log::warn!("peer {peer} has taken over stream, exiting");
                     break;
                 }
-            }
-            Some(PacketKind::Time(mut time)) => {
-                // only handle packet if it belongs to our stream:
-                if time.data().sid != sid {
-                    continue;
-                }
-
-                match time.data().phase() {
-                    Some(TimePhase::ReceiverReply) => {
-                        time.data_mut().stream_3 = time::now();
-
-                        protocol.send_to(time.as_packet(), peer)
-                            .expect("protocol.send_to responding to time packet");
-                    }
-                    _ => {
-                        // any other packet here must be destined for
-                        // another instance on the same machine
-                    }
-                }
-
             }
             Some(PacketKind::StatsRequest(_)) => {
                 let reply = StatsReply::source(sid, node)
