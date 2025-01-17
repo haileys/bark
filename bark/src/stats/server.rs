@@ -1,4 +1,3 @@
-use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -7,8 +6,6 @@ use axum::Router;
 use axum::routing::get;
 use structopt::StructOpt;
 use thiserror::Error;
-
-use crate::config;
 
 #[derive(StructOpt)]
 pub struct MetricsOpt {
@@ -37,10 +34,14 @@ pub async fn start(opt: &MetricsOpt) -> Result<MetricsServer, StartError> {
     let data = Arc::new(MetricsData::default());
 
     let app = Router::new()
-        .with_state(data.clone())
-        .route("/metrics", get(metrics));
+        .route("/metrics", get(metrics))
+        .with_state(data.clone());
 
     let listener = tokio::net::TcpListener::bind(&opt.listen).await?;
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap()
+    });
 
     Ok(MetricsServer { data })
 }

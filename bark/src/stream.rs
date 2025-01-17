@@ -6,6 +6,7 @@ use bark_core::encode::Encode;
 use bark_core::encode::pcm::{S16LEEncoder, F32LEEncoder};
 use bark_protocol::FRAMES_PER_PACKET;
 use bytemuck::Zeroable;
+use futures::future;
 use structopt::StructOpt;
 
 #[cfg(feature = "opus")]
@@ -19,7 +20,7 @@ use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
 use crate::stats::server::MetricsOpt;
-use crate::{stats, time, config};
+use crate::{config, stats, thread, time};
 use crate::RunError;
 
 #[derive(StructOpt)]
@@ -54,7 +55,7 @@ pub struct StreamOpt {
     pub format: config::Format,
 }
 
-pub fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
+pub async fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
     let input = Input::new(&DeviceOpt {
         device: opt.input_device,
         period: opt.input_period
@@ -73,9 +74,8 @@ pub fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
     let delay = SampleDuration::from_std_duration_lossy(delay);
 
     let sid = generate_session_id();
-    let node = stats::node::get();
 
-    let mut encoder: Box<dyn Encode> = match opt.format {
+    let encoder: Box<dyn Encode> = match opt.format {
         config::Format::S16LE => Box::new(S16LEEncoder),
         config::Format::F32LE => Box::new(F32LEEncoder),
         #[cfg(feature = "opus")]
@@ -84,6 +84,28 @@ pub fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
 
     log::info!("instantiated encoder: {}", encoder);
 
+    let metrics = stats::server::start(&metrics).await?;
+
+    let audio_th = thread::start("bark/audio", {
+        let protocol = protocol.clone();
+        move || audio_thread(input, encoder, delay, sid, protocol)
+    });
+
+    let network_th = thread::start("bark/network", {
+        move || network_thread(sid, protocol)
+    });
+
+    future::select(audio_th, network_th).await;
+    Ok(())
+}
+
+fn audio_thread(
+    input: Input,
+    mut encoder: Box<dyn Encode>,
+    delay: SampleDuration,
+    sid: SessionId,
+    protocol: Arc<ProtocolSocket>,
+) {
     let mut audio_header = AudioPacketHeader {
         sid,
         seq: 1,
@@ -92,57 +114,55 @@ pub fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
         format: encoder.header_format(),
     };
 
-    std::thread::spawn({
-        let protocol = protocol.clone();
-        move || {
-            crate::thread::set_name("bark/audio");
+    loop {
+        let mut audio_buffer = [Frame::zeroed(); FRAMES_PER_PACKET];
 
-            loop {
-                let mut audio_buffer = [Frame::zeroed(); FRAMES_PER_PACKET];
-
-                // read audio input
-                let timestamp = match input.read(&mut audio_buffer) {
-                    Ok(ts) => ts,
-                    Err(e) => {
-                        log::error!("error reading audio input: {e}");
-                        break;
-                    }
-                };
-
-                // encode audio
-                let mut encode_buffer = [0; Audio::MAX_BUFFER_LENGTH];
-                let encoded_data = match encoder.encode_packet(&audio_buffer, &mut encode_buffer) {
-                    Ok(size) => &encode_buffer[0..size],
-                    Err(e) => {
-                        log::error!("error encoding audio: {e}");
-                        break;
-                    }
-                };
-
-                // assemble new packet header
-                let pts = timestamp.add(delay);
-
-                let header = AudioPacketHeader {
-                    pts: pts.to_micros_lossy(),
-                    dts: time::now(),
-                    ..audio_header
-                };
-
-                // allocate new audio packet and copy encoded data in
-                let audio = Audio::new(&header, encoded_data)
-                    .expect("allocate Audio packet");
-
-                // send it
-                protocol.broadcast(audio.as_packet()).expect("broadcast");
-
-                // reset header for next packet:
-                audio_header.seq += 1;
+        // read audio input
+        let timestamp = match input.read(&mut audio_buffer) {
+            Ok(ts) => ts,
+            Err(e) => {
+                log::error!("error reading audio input: {e}");
+                break;
             }
-        }
-    });
+        };
 
-    crate::thread::set_name("bark/network");
-    crate::thread::set_realtime_priority();
+        // encode audio
+        let mut encode_buffer = [0; Audio::MAX_BUFFER_LENGTH];
+        let encoded_data = match encoder.encode_packet(&audio_buffer, &mut encode_buffer) {
+            Ok(size) => &encode_buffer[0..size],
+            Err(e) => {
+                log::error!("error encoding audio: {e}");
+                break;
+            }
+        };
+
+        // assemble new packet header
+        let pts = timestamp.add(delay);
+
+        let header = AudioPacketHeader {
+            pts: pts.to_micros_lossy(),
+            dts: time::now(),
+            ..audio_header
+        };
+
+        // allocate new audio packet and copy encoded data in
+        let audio = Audio::new(&header, encoded_data)
+            .expect("allocate Audio packet");
+
+        // send it
+        protocol.broadcast(audio.as_packet()).expect("broadcast");
+
+        // reset header for next packet:
+        audio_header.seq += 1;
+    }
+}
+
+fn network_thread(
+    sid: SessionId,
+    protocol: Arc<ProtocolSocket>,
+) {
+    thread::set_realtime_priority();
+    let node = stats::node::get();
 
     loop {
         let (packet, peer) = protocol.recv_from().expect("protocol.recv_from");
@@ -170,8 +190,6 @@ pub fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
             }
         }
     }
-
-    Ok(())
 }
 
 fn generate_session_id() -> SessionId {

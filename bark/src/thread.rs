@@ -2,6 +2,9 @@ use std::ffi::CString;
 use std::io::ErrorKind;
 use std::sync::atomic::AtomicBool;
 
+use futures::future::{Future, FutureExt};
+use tokio::sync::oneshot;
+
 pub fn set_name(name: &str) {
     let cstr = CString::new(name)
         .expect("not a cstring in set_thread_name");
@@ -43,5 +46,22 @@ pub fn set_realtime_priority() {
             }
         }
     }
+}
 
+pub fn start<Ret: Send + 'static>(name: &'static str, func: impl FnOnce() -> Ret + Send + 'static)
+    -> impl Future<Output = Ret>
+{
+    let (tx, rx) = oneshot::channel();
+
+    std::thread::spawn(move || {
+        set_name(name);
+        let _ = tx.send(func());
+    });
+
+    rx.map(move |result| {
+        match result {
+            Ok(result) => result,
+            Err(_) => { panic!("thread panicked: {name}"); }
+        }
+    })
 }

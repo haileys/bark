@@ -3,8 +3,6 @@ use std::time::Duration;
 
 use bytemuck::Zeroable;
 use structopt::StructOpt;
-use tokio::sync::oneshot;
-use futures::future::{Future, FutureExt};
 
 use bark_core::receive::queue::AudioPts;
 
@@ -198,34 +196,23 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
             .unwrap_or(DEFAULT_BUFFER),
     }).map_err(RunError::OpenAudioDevice)?;
 
-    let mut receiver = Receiver::new(output);
+    let receiver = Receiver::new(output);
 
     let socket = Socket::open(opt.socket)
         .map_err(RunError::Listen)?;
 
     let metrics = stats::server::start(&metrics).await?;
 
-    start_network_thread(socket, metrics, receiver).await
+    thread::start("bark/network", move || {
+        network_thread(socket, metrics, receiver)
+    }).await
 }
 
-fn start_network_thread(socket: Socket, metrics: MetricsServer, receiver: Receiver)
-    -> impl Future<Output = Result<(), RunError>>
-{
-    let (tx, rx) = oneshot::channel();
-
-    let thread = std::thread::spawn(move || {
-        let _ = tx.send(network_thread(socket, metrics, receiver));
-    });
-
-    rx.map(|result| {
-        match result {
-            Ok(result) => result,
-            Err(_) => { panic!("network thread panicked"); }
-        }
-    })
-}
-
-fn network_thread(socket: Socket, metrics: MetricsServer, mut receiver: Receiver) -> Result<(), RunError> {
+fn network_thread(
+    socket: Socket,
+    metrics: MetricsServer,
+    mut receiver: Receiver,
+) -> Result<(), RunError> {
     let node = stats::node::get();
 
     thread::set_name("bark/network");

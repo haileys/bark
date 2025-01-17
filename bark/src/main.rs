@@ -57,7 +57,7 @@ async fn main() -> Result<(), ExitCode> {
     let opt = Opt::from_args();
 
     let result = match opt.cmd {
-        Cmd::Stream(cmd) => stream::run(cmd, opt.metrics),
+        Cmd::Stream(cmd) => stream::run(cmd, opt.metrics).await,
         Cmd::Receive(cmd) => receive::run(cmd, opt.metrics).await,
         Cmd::Stats(cmd) => stats::run(cmd),
     };
