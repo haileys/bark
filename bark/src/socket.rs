@@ -100,12 +100,17 @@ fn open_multicast(group: Ipv4Addr, bind: SocketAddrV4) -> Result<socket2::Socket
     let socket = bind_socket(bind)?;
 
     // join multicast group
-    socket.join_multicast_v4(&group, &Ipv4Addr::UNSPECIFIED)
-        .map_err(|e| ListenError::JoinMulticastGroup(group, e))?;
+    if group.is_multicast() {
+        socket.join_multicast_v4(&group, &Ipv4Addr::UNSPECIFIED)
+            .map_err(|e| ListenError::JoinMulticastGroup(group, e))?;
+
+        let _ = socket.set_multicast_loop_v4(true);
+
+        socket.set_broadcast(true).map_err(ListenError::SetBroadcast)?;
+    }
 
     // set opts
     socket.set_broadcast(true).map_err(ListenError::SetBroadcast)?;
-    let _ = socket.set_multicast_loop_v4(true);
 
     Ok(socket.into())
 }
