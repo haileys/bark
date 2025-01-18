@@ -118,7 +118,7 @@ impl<F: Format> Receiver<F> {
         let pts = Timestamp::from_micros_lossy(header.pts);
 
         // TODO - this is where we would take buffer length stats
-        stream.decode.send(AudioPts {
+        let queue_len = stream.decode.send(AudioPts {
             pts,
             audio: packet,
         })?;

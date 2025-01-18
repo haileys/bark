@@ -1,7 +1,7 @@
 use std::fmt::{self, Display, Write};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{i64, u64};
 
@@ -40,9 +40,13 @@ impl MetricsSender {
         self.data.audio_offset.store(value, Ordering::Relaxed);
     }
 
-    pub fn observe_buffer_length(&self, length: SampleDuration) {
+    pub fn observe_buffer_delay(&self, length: SampleDuration) {
         let value = length.to_micros_lossy();
-        self.data.buffer_length.store(value, Ordering::Relaxed);
+        self.data.buffer_delay.store(value, Ordering::Relaxed);
+    }
+
+    pub fn observe_queued_packets(&self, count: usize) {
+        self.data.queued_packets.store(count, Ordering::Relaxed);
     }
 
     pub fn observe_network_latency(&self, latency: Duration) {
@@ -51,6 +55,14 @@ impl MetricsSender {
     }
 
     pub fn increment_packets_received(&self) {
+        self.data.packets_received.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn increment_packets_lost(&self) {
+        self.data.packets_received.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn increment_packets_missed(&self) {
         self.data.packets_received.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -67,9 +79,12 @@ impl MetricsSender {
 
 struct MetricsData {
     audio_offset: AtomicI64,
-    buffer_length: AtomicU64,
+    buffer_delay: AtomicU64,
+    queued_packets: AtomicUsize,
     network_latency: AtomicU64,
     packets_received: AtomicU64,
+    packets_lost: AtomicU64,
+    packets_missed: AtomicU64,
     frames_decoded: AtomicU64,
     frames_played: AtomicU64,
 }
@@ -78,9 +93,12 @@ impl Default for MetricsData {
     fn default() -> Self {
         MetricsData {
             audio_offset: AtomicI64::new(i64::MIN),
-            buffer_length: Default::default(),
+            buffer_delay: Default::default(),
+            queued_packets: Default::default(),
             network_latency: Default::default(),
             packets_received: Default::default(),
+            packets_lost: Default::default(),
+            packets_missed: Default::default(),
             frames_decoded: Default::default(),
             frames_played: Default::default(),
         }
@@ -119,14 +137,19 @@ fn render_metrics(data: &MetricsData) -> Result<String, std::fmt::Error> {
         render.gauge("bark_receiver_audio_offset_usec", audio_offset_usec)?;
     }
 
-    render.gauge("bark_receiver_buffer_length_usec", data.buffer_length.load(Ordering::Relaxed))?;
+    // TODO - rename this one
+    render.gauge("bark_receiver_buffer_length_usec", data.buffer_delay.load(Ordering::Relaxed))?;
 
     let network_latency_usec = data.network_latency.load(Ordering::Relaxed);
     if network_latency_usec != 0 {
         render.gauge("bark_receiver_network_latency_usec", network_latency_usec)?;
     }
 
+    render.gauge("bark_receiver_queued_packet_count", data.queued_packets.load(Ordering::Relaxed))?;
+
     render.counter("bark_receiver_packets_received", data.packets_received.load(Ordering::Relaxed))?;
+    render.counter("bark_receiver_packets_lost", data.packets_lost.load(Ordering::Relaxed))?;
+    render.counter("bark_receiver_packets_missed", data.packets_missed.load(Ordering::Relaxed))?;
     render.counter("bark_receiver_frames_decoded", data.frames_decoded.load(Ordering::Relaxed))?;
     render.counter("bark_receiver_frames_played", data.frames_played.load(Ordering::Relaxed))?;
     Ok(render.finish())

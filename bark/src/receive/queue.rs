@@ -49,7 +49,7 @@ impl QueueSender {
 }
 
 impl QueueReceiver {
-    pub fn recv(&self) -> Result<Option<AudioPts>, Disconnected> {
+    pub fn recv(&self) -> Result<(Option<AudioPts>, usize), Disconnected> {
         let mut queue_lock = self.shared.queue.lock().unwrap();
 
         loop {
@@ -57,13 +57,16 @@ impl QueueReceiver {
                 return Err(Disconnected);
             };
 
-            if queue.len() > 0 {
-                return Ok(queue.pop_front());
-            }
-
             // if queue is empty return None
             // never block
-            return Ok(None);
+
+            // take len before popping
+            let len = queue.len();
+            return Ok((queue.pop_front(), len));
+
+            // if queue.len() > 0 {
+            //     return Ok(queue.pop_front());
+            // }
 
             // // if queue is empty we'll block until notified
             // queue_lock = self.shared.notify.wait(queue_lock).unwrap();

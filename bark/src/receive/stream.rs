@@ -86,10 +86,24 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
 
     loop {
         // get next packet from queue, or None if missing (packet loss)
-        let queue_item = match stream.queue.recv() {
+        let (queue_item, queue_len) = match stream.queue.recv() {
             Ok(rx) => rx,
             Err(_) => { return; } // disconnected
         };
+
+        // update queue related metrics
+        stream.metrics.observe_queued_packets(queue_len);
+
+        if queue_item.is_none() {
+            if queue_len == 0 {
+                // if packet is missing because the queue is empty, we are running too
+                // hot up against the stream and missed our deadline
+                stream.metrics.increment_packets_missed();
+            } else {
+                // if the queue is not empty, this is just network packet loss
+                stream.metrics.increment_packets_lost();
+            }
+        }
 
         let (packet, stream_pts) = queue_item.as_ref()
             .map(|item| (Some(&item.audio), Some(item.pts)))
@@ -112,7 +126,7 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
         // get current output delay
         let delay = output.delay().unwrap();
         stats.output_latency = delay;
-        stream.metrics.observe_buffer_length(delay);
+        stream.metrics.observe_buffer_delay(delay);
 
         // calculate presentation timestamp based on output delay
         let pts = time::now();
