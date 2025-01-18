@@ -46,12 +46,16 @@ impl PacketQueue {
     }
 
     pub fn pop_front(&mut self) -> Option<AudioPts> {
-        if self.start.yield_packet() {
-            self.head_seq += 1;
-            self.queue.pop_front().flatten()
-        } else {
-            None
+        if !self.start.yield_packet() {
+            return None;
         }
+
+        if self.queue.is_empty() {
+            return None;
+        }
+
+        self.head_seq += 1;
+        self.queue.pop_front().flatten()
     }
 
     pub fn insert_packet(&mut self, packet: AudioPts) {
