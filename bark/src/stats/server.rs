@@ -120,7 +120,12 @@ fn render_metrics(data: &MetricsData) -> Result<String, std::fmt::Error> {
     }
 
     render.gauge("bark_receiver_buffer_length_usec", data.buffer_length.load(Ordering::Relaxed))?;
-    render.gauge("bark_receiver_network_latency_usec", data.network_latency.load(Ordering::Relaxed))?;
+
+    let network_latency_usec = data.network_latency.load(Ordering::Relaxed);
+    if network_latency_usec != 0 {
+        render.gauge("bark_receiver_network_latency_usec", network_latency_usec)?;
+    }
+
     render.counter("bark_receiver_packets_received", data.packets_received.load(Ordering::Relaxed))?;
     render.counter("bark_receiver_frames_decoded", data.frames_decoded.load(Ordering::Relaxed))?;
     render.counter("bark_receiver_frames_played", data.frames_played.load(Ordering::Relaxed))?;
