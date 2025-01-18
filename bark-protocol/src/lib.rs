@@ -9,7 +9,8 @@ pub mod types;
 
 pub const SAMPLE_RATE: SampleRate = SampleRate(48000);
 pub const CHANNELS: ChannelCount = ChannelCount(2);
-pub const FRAMES_PER_PACKET: usize = 120; // 2.5ms at 48khz, compatible with opus
+// pub const FRAMES_PER_PACKET: usize = 120; // 2.5ms at 48khz, compatible with opus
+pub const FRAMES_PER_PACKET: usize = 48;
 pub const SAMPLES_PER_PACKET: usize = CHANNELS.0 as usize * FRAMES_PER_PACKET;
 
 #[derive(Copy, Clone, Debug, Into)]
