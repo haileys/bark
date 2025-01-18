@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::time::Duration;
-use std::u64;
+use std::{i64, u64};
 
 use axum::extract::State;
 use axum::Router;
@@ -29,8 +29,13 @@ pub struct MetricsSender {
 }
 
 impl MetricsSender {
-    pub fn observe_audio_offset(&self, delta: TimestampDelta) {
-        let value = delta.to_micros_lossy();
+    pub fn observe_audio_offset(&self, delta: Option<TimestampDelta>) {
+        let value = match delta {
+            Some(delta) => delta.to_micros_lossy(),
+            // i64::MIN is a sentinel value indicating missing value
+            None => i64::MIN,
+        };
+
         self.data.audio_offset.store(value, Ordering::Relaxed);
     }
 
@@ -95,7 +100,12 @@ async fn metrics(data: State<Arc<MetricsData>>) -> String {
 
 fn render_metrics(data: &MetricsData) -> Result<String, std::fmt::Error> {
     let mut render = RenderMetrics::new();
-    render.gauge("bark_receiver_audio_offset_usec", data.audio_offset.load(Ordering::Relaxed))?;
+
+    let audio_offset_usec = data.audio_offset.load(Ordering::Relaxed);
+    if audio_offset_usec != i64::MIN {
+        render.gauge("bark_receiver_audio_offset_usec", audio_offset_usec)?;
+    }
+
     render.gauge("bark_receiver_buffer_length_usec", data.buffer_length.load(Ordering::Relaxed))?;
     render.gauge("bark_receiver_network_latency_usec", data.network_latency.load(Ordering::Relaxed))?;
     render.counter("bark_receiver_packets_received", data.packets_received.load(Ordering::Relaxed))?;
