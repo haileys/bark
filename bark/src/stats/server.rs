@@ -8,10 +8,11 @@ use std::{i64, u64};
 use axum::extract::State;
 use axum::Router;
 use axum::routing::get;
-use bark_core::audio::FrameCount;
-use bark_protocol::time::{SampleDuration, TimestampDelta};
 use structopt::StructOpt;
 use thiserror::Error;
+
+use bark_core::audio::FrameCount;
+use bark_protocol::time::{SampleDuration, TimestampDelta};
 
 #[derive(StructOpt)]
 pub struct MetricsOpt {
@@ -64,7 +65,6 @@ impl MetricsSender {
     }
 }
 
-#[derive(Default)]
 struct MetricsData {
     audio_offset: AtomicI64,
     buffer_length: AtomicU64,
@@ -72,6 +72,19 @@ struct MetricsData {
     packets_received: AtomicU64,
     frames_decoded: AtomicU64,
     frames_played: AtomicU64,
+}
+
+impl Default for MetricsData {
+    fn default() -> Self {
+        MetricsData {
+            audio_offset: AtomicI64::new(i64::MIN),
+            buffer_length: Default::default(),
+            network_latency: Default::default(),
+            packets_received: Default::default(),
+            frames_decoded: Default::default(),
+            frames_played: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Error)]

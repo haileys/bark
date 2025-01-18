@@ -61,9 +61,18 @@ impl QueueReceiver {
                 return Ok(queue.pop_front());
             }
 
-            // if queue is empty we'll block until notified
-            queue_lock = self.shared.notify.wait(queue_lock).unwrap();
-            continue;
+            // if queue is empty return None
+            // never block
+            return Ok(None);
+
+            // // if queue is empty we'll block until notified
+            // queue_lock = self.shared.notify.wait(queue_lock).unwrap();
+            // continue;
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let queue = self.shared.queue.lock().unwrap();
+        queue.as_ref().map(|q| q.len() == 0).unwrap_or(true)
     }
 }

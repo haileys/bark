@@ -137,6 +137,10 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
             let audio_offset = timing.real.delta(timing.play);
             stats.audio_latency = audio_offset;
             stream.metrics.observe_audio_offset(Some(audio_offset));
+        } else {
+            if stream.queue.is_empty() {
+                stream.metrics.observe_audio_offset(None);
+            }
         }
 
         // update stats
