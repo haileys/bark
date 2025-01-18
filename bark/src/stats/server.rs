@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt::{self, Display, Write};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
@@ -8,6 +8,7 @@ use std::u64;
 use axum::extract::State;
 use axum::Router;
 use axum::routing::get;
+use bark_core::audio::FrameCount;
 use bark_protocol::time::{SampleDuration, TimestampDelta};
 use structopt::StructOpt;
 use thiserror::Error;
@@ -42,6 +43,20 @@ impl MetricsSender {
         let value = u64::try_from(latency.as_micros()).unwrap_or(u64::MAX);
         self.data.network_latency.store(value, Ordering::Relaxed);
     }
+
+    pub fn increment_packets_received(&self) {
+        self.data.packets_received.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn increment_frames_decoded(&self, count: FrameCount) {
+        let value = u64::try_from(count.0).expect("usize -> u64");
+        self.data.frames_decoded.fetch_add(value, Ordering::Relaxed);
+    }
+
+    pub fn increment_frames_played(&self, count: FrameCount) {
+        let value = u64::try_from(count.0).expect("usize -> u64");
+        self.data.frames_played.fetch_add(value, Ordering::Relaxed);
+    }
 }
 
 #[derive(Default)]
@@ -49,6 +64,9 @@ struct MetricsData {
     audio_offset: AtomicI64,
     buffer_length: AtomicU64,
     network_latency: AtomicU64,
+    packets_received: AtomicU64,
+    frames_decoded: AtomicU64,
+    frames_played: AtomicU64,
 }
 
 #[derive(Debug, Error)]
@@ -76,9 +94,41 @@ async fn metrics(data: State<Arc<MetricsData>>) -> String {
 }
 
 fn render_metrics(data: &MetricsData) -> Result<String, std::fmt::Error> {
-    let mut out = String::new();
-    write!(&mut out, "bark_receiver_audio_offset_usec {}\n", data.audio_offset.load(Ordering::Relaxed))?;
-    write!(&mut out, "bark_receiver_buffer_length_usec {}\n", data.buffer_length.load(Ordering::Relaxed))?;
-    write!(&mut out, "bark_receiver_network_latency_usec {}\n", data.network_latency.load(Ordering::Relaxed))?;
-    Ok(out)
+    let mut render = RenderMetrics::new();
+    render.gauge("bark_receiver_audio_offset_usec", data.audio_offset.load(Ordering::Relaxed))?;
+    render.gauge("bark_receiver_buffer_length_usec", data.buffer_length.load(Ordering::Relaxed))?;
+    render.gauge("bark_receiver_network_latency_usec", data.network_latency.load(Ordering::Relaxed))?;
+    render.counter("bark_receiver_packets_received", data.packets_received.load(Ordering::Relaxed))?;
+    render.counter("bark_receiver_frames_decoded", data.frames_decoded.load(Ordering::Relaxed))?;
+    render.counter("bark_receiver_frames_played", data.frames_played.load(Ordering::Relaxed))?;
+    Ok(render.finish())
+}
+
+struct RenderMetrics {
+    buff: String,
+}
+
+impl RenderMetrics {
+    pub fn new() -> Self {
+        RenderMetrics { buff: String::new() }
+    }
+
+    fn expose(&mut self, type_: &str, name: &str, value: impl Display) -> fmt::Result {
+        write!(&mut self.buff, "# TYPE {name} {type_}\n")?;
+        write!(&mut self.buff, "{name} {value}\n")?;
+        write!(&mut self.buff, "\n")?;
+        Ok(())
+    }
+
+    pub fn gauge(&mut self, name: &str, value: impl Display) -> fmt::Result {
+        self.expose("gauge", name, value)
+    }
+
+    pub fn counter(&mut self, name: &str, value: impl Display) -> fmt::Result {
+        self.expose("counter", name, value)
+    }
+
+    pub fn finish(self) -> String {
+        self.buff
+    }
 }

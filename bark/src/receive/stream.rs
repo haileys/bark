@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use bark_core::audio::FrameCount;
 use bark_core::{audio::Frame, receive::{pipeline::Pipeline, queue::{AudioPts, PacketQueue}, timing::Timing}};
 use bark_protocol::time::{SampleDuration, Timestamp, TimestampDelta};
 use bark_protocol::types::stats::receiver::StreamStatus;
@@ -97,6 +98,9 @@ fn run_stream(mut stream: State, stats_tx: Arc<Mutex<DecodeStats>>) {
         let frames = stream.pipeline.process(packet, &mut buffer);
         let buffer = &buffer[0..frames];
 
+        // increment frames decoded metric
+        stream.metrics.increment_frames_decoded(FrameCount(frames));
+
         // lock output
         let Some(output) = stream.output.lock() else {
             // output has been stolen from us, exit thread
@@ -135,6 +139,9 @@ fn run_stream(mut stream: State, stats_tx: Arc<Mutex<DecodeStats>>) {
 
         // update stats
         *stats_tx.lock().unwrap() = stats.clone();
+
+        // increment frames output metric
+        stream.metrics.increment_frames_played(FrameCount(buffer.len()));
 
         // send audio to ALSA
         match output.write(buffer) {

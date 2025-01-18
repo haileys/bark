@@ -121,10 +121,14 @@ impl Receiver {
             audio: packet,
         })?;
 
+        // network latency metric
         let latency_usec = now.0.saturating_sub(packet_dts.0);
         let latency = Duration::from_micros(latency_usec);
         stream.latency.observe(latency);
         self.metrics.observe_network_latency(latency);
+
+        // update packet received metrics
+        self.metrics.increment_packets_received();
 
         Ok(())
     }
