@@ -243,7 +243,6 @@ fn network_thread<F: Format>(
                 // let state = state.lock().unwrap();
                 let sid = receiver.current_session().unwrap_or(SessionId::zeroed());
                 let receiver = receiver.stats();
-                println!("{:?}", receiver);
 
                 let reply = StatsReply::receiver(sid, receiver, node)
                     .expect("allocate StatsReply packet");
