@@ -66,53 +66,6 @@ pub type AudioPacketBuffer = [f32; SAMPLES_PER_PACKET];
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
-pub struct TimePacket {
-    pub sid: SessionId,
-    pub rid: ReceiverId,
-
-    pub stream_1: TimestampMicros,
-    pub receive_2: TimestampMicros,
-    pub stream_3: TimestampMicros,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum TimePhase {
-    /// The initial phase, the stream server sends out a broadcast time packet
-    /// withn only `stream_1` set
-    Broadcast,
-
-    /// A receiver replies, setting `receive_2`
-    ReceiverReply,
-
-    /// Finally, the stream replies (over unicast) again, setting `stream_3`
-    StreamReply,
-}
-
-impl TimePacket {
-    pub fn phase(&self) -> Option<TimePhase> {
-        let t1 = self.stream_1.0;
-        let t2 = self.receive_2.0;
-        let t3 = self.stream_3.0;
-
-        if t1 != 0 && t2 == 0 && t3 == 0 {
-            return Some(TimePhase::Broadcast);
-        }
-
-        if t1 != 0 && t2 != 0 && t3 == 0 {
-            return Some(TimePhase::ReceiverReply);
-        }
-
-        if t1 != 0 && t2 != 0 && t3 != 0 {
-            return Some(TimePhase::StreamReply);
-        }
-
-        // incoherent + invalid time packet
-        None
-    }
-}
-
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-#[repr(C)]
 pub struct StatsReplyPacket {
     pub sid: SessionId,
     pub receiver: stats::receiver::ReceiverStats,
