@@ -44,6 +44,8 @@ impl Packet {
             Magic::AUDIO => Audio::parse(self).map(PacketKind::Audio),
             Magic::STATS_REQ => StatsRequest::parse(self).map(PacketKind::StatsRequest),
             Magic::STATS_REPLY => StatsReply::parse(self).map(PacketKind::StatsReply),
+            Magic::PING => Some(PacketKind::Ping(Ping(self))),
+            Magic::PONG => Some(PacketKind::Pong(Pong(self))),
             _ => None,
         }
     }
@@ -81,6 +83,8 @@ pub enum PacketKind {
     Audio(Audio),
     StatsRequest(StatsRequest),
     StatsReply(StatsReply),
+    Ping(Ping),
+    Pong(Pong),
 }
 
 #[derive(Debug)]
@@ -221,5 +225,33 @@ impl StatsReply {
 
     pub fn data_mut(&mut self) -> &mut types::StatsReplyPacket {
         bytemuck::from_bytes_mut(self.0.as_bytes_mut())
+    }
+}
+
+#[derive(Debug)]
+pub struct Ping(Packet);
+
+impl Ping {
+    pub fn new() -> Result<Self, AllocError> {
+        let packet = Packet::allocate(Magic::PING, 0)?;
+        Ok(Ping(packet))
+    }
+
+    pub fn as_packet(&self) -> &Packet {
+        &self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct Pong(Packet);
+
+impl Pong {
+    pub fn new() -> Result<Self, AllocError> {
+        let packet = Packet::allocate(Magic::PONG, 0)?;
+        Ok(Pong(packet))
+    }
+
+    pub fn as_packet(&self) -> &Packet {
+        &self.0
     }
 }

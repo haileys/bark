@@ -10,7 +10,7 @@ use bark_core::receive::queue::AudioPts;
 use bark_protocol::time::{Timestamp, SampleDuration};
 use bark_protocol::types::{AudioPacketHeader, SessionId};
 use bark_protocol::types::stats::receiver::ReceiverStats;
-use bark_protocol::packet::{Audio, PacketKind, StatsReply};
+use bark_protocol::packet::{Audio, PacketKind, Pong, StatsReply};
 
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::Output;
@@ -250,6 +250,13 @@ fn network_thread<F: Format>(
                 let _ = protocol.send_to(reply.as_packet(), peer);
             }
             Some(PacketKind::StatsReply(_)) => {
+                // ignore
+            }
+            Some(PacketKind::Ping(_)) => {
+                let pong = Pong::new().expect("allocate Pong packet");
+                let _ = protocol.send_to(pong.as_packet(), peer);
+            }
+            Some(PacketKind::Pong(_)) => {
                 // ignore
             }
             None => {

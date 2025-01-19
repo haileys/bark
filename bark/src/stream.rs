@@ -15,7 +15,7 @@ use structopt::StructOpt;
 use bark_core::encode::opus::OpusEncoder;
 
 use bark_protocol::time::SampleDuration;
-use bark_protocol::packet::{Audio, StatsReply, PacketKind};
+use bark_protocol::packet::{Audio, PacketKind, Pong, StatsReply};
 use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId};
 
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
@@ -201,6 +201,13 @@ fn network_thread(
                 let _ = protocol.send_to(reply.as_packet(), peer);
             }
             Some(PacketKind::StatsReply(_)) => {
+                // ignore
+            }
+            Some(PacketKind::Ping(_)) => {
+                let pong = Pong::new().expect("allocate Pong packet");
+                let _ = protocol.send_to(pong.as_packet(), peer);
+            }
+            Some(PacketKind::Pong(_)) => {
                 // ignore
             }
             None => {
