@@ -28,8 +28,30 @@ impl<F: Format> Output<F> {
     }
 
     pub fn delay(&self) -> Result<SampleDuration, alsa::Error> {
-        let frames = self.pcm.delay()?;
+        let frames = recover(&self.pcm, || self.pcm.delay())?;
         Ok(SampleDuration::from_frame_count(frames.try_into().unwrap()))
+    }
+}
+
+fn recover<T>(pcm: &PCM, func: impl Fn() -> Result<T, alsa::Error>) -> Result<T, alsa::Error> {
+    loop {
+        let err = match func() {
+            Ok(value) => { return Ok(value); }
+            Err(err) => err,
+        };
+
+        // handle recoverable errors
+        match err.errno() {
+            | libc::EPIPE // underrun
+            | libc::ESTRPIPE // stream suspended
+            | libc::EINTR // interrupted syscall
+            => {
+                log::warn!("recovering from alsa error: {}", err.errno());
+                // try to recover
+                pcm.recover(err.errno(), false)?;
+            }
+            _ => { return Err(err); }
+        }
     }
 }
 
@@ -53,24 +75,5 @@ fn write_partial_impl<F: Format>(pcm: &PCM, samples: &[F::Frame]) -> Result<usiz
         pcm.io_unchecked::<F::Sample>()
     };
 
-    loop {
-        // try to write audio
-        let err = match io.writei(audio::as_interleaved::<F>(samples)) {
-            Ok(n) => { return Ok(n) },
-            Err(e) => e,
-        };
-
-        // handle recoverable errors
-        match err.errno() {
-            | libc::EPIPE // underrun
-            | libc::ESTRPIPE // stream suspended
-            | libc::EINTR // interrupted syscall
-            => {
-                log::warn!("recovering from error: {}", err.errno());
-                // try to recover
-                pcm.recover(err.errno(), false)?;
-            }
-            _ => { return Err(err.into()); }
-        }
-    }
+    recover(pcm, || io.writei(audio::as_interleaved::<F>(samples)))
 }
