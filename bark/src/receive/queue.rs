@@ -1,4 +1,4 @@
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 
 use bark_core::receive::queue::{PacketQueue, AudioPts};
 use thiserror::Error;
@@ -13,7 +13,6 @@ pub struct QueueReceiver {
 
 struct Shared {
     queue: Mutex<Option<PacketQueue>>,
-    notify: Condvar,
 }
 
 impl Shared {
@@ -26,7 +25,6 @@ impl Shared {
 pub fn channel(queue: PacketQueue) -> (QueueSender, QueueReceiver) {
     let shared = Arc::new(Shared {
         queue: Mutex::new(Some(queue)),
-        notify: Condvar::new(),
     });
 
     let tx = QueueSender { shared: shared.clone() };
@@ -48,9 +46,6 @@ impl QueueSender {
         };
 
         queue.insert_packet(packet);
-
-        self.shared.notify.notify_all();
-
         Ok(())
     }
 }
@@ -65,31 +60,13 @@ impl QueueReceiver {
     pub fn recv(&self) -> Result<(Option<AudioPts>, usize), Disconnected> {
         let mut queue_lock = self.shared.queue.lock().unwrap();
 
-        loop {
-            let Some(queue) = queue_lock.as_mut() else {
-                return Err(Disconnected);
-            };
+        let Some(queue) = queue_lock.as_mut() else {
+            return Err(Disconnected);
+        };
 
-            // if queue is empty return None
-            // never block
-
-            // take len before popping
-            let len = queue.len();
-            return Ok((queue.pop_front(), len));
-
-            // if queue.len() > 0 {
-            //     return Ok(queue.pop_front());
-            // }
-
-            // // if queue is empty we'll block until notified
-            // queue_lock = self.shared.notify.wait(queue_lock).unwrap();
-            // continue;
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        let queue = self.shared.queue.lock().unwrap();
-        queue.as_ref().map(|q| q.len() == 0).unwrap_or(true)
+        // take len before popping
+        let len = queue.len();
+        return Ok((queue.pop_front(), len));
     }
 }
 

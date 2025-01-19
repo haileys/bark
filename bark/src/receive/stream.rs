@@ -156,7 +156,9 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
             stats.audio_latency = audio_offset;
             stream.metrics.observe_audio_offset(Some(audio_offset));
         } else {
-            if stream.queue.is_empty() {
+            // queue_len is length before attempted pop, if 0 then we know
+            // that the queue is empty
+            if queue_len == 0 {
                 stream.metrics.observe_audio_offset(None);
             }
         }

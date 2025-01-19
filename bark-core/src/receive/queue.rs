@@ -50,12 +50,12 @@ impl PacketQueue {
             return None;
         }
 
-        if self.queue.is_empty() {
-            return None;
+        if let Some(entry) = self.queue.pop_front() {
+            self.head_seq += 1;
+            return entry;
         }
 
-        self.head_seq += 1;
-        self.queue.pop_front().flatten()
+        None
     }
 
     pub fn insert_packet(&mut self, packet: AudioPts) {
