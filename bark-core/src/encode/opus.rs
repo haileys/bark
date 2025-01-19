@@ -2,8 +2,7 @@ use core::fmt::{self, Display};
 
 use bark_protocol::{types::AudioPacketFormat, SAMPLE_RATE};
 
-use crate::audio::{Frame, self};
-
+use crate::audio::{self, Frames, F32, S16};
 use super::{Encode, EncodeError, NewEncoderError};
 
 pub struct OpusEncoder {
@@ -37,7 +36,12 @@ impl Encode for OpusEncoder {
         AudioPacketFormat::OPUS
     }
 
-    fn encode_packet(&mut self, samples: &[Frame], out: &mut [u8]) -> Result<usize, EncodeError> {
-        Ok(self.opus.encode_float(audio::as_interleaved(samples), out)?)
+    fn encode_packet(&mut self, frames: Frames, out: &mut [u8]) -> Result<usize, EncodeError> {
+        let n = match frames {
+            Frames::S16(frames) => self.opus.encode(audio::as_interleaved::<S16>(frames), out)?,
+            Frames::F32(frames) => self.opus.encode_float(audio::as_interleaved::<F32>(frames), out)?,
+        };
+
+        Ok(n)
     }
 }

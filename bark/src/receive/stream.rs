@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use bark_core::audio::FrameCount;
-use bark_core::{audio::Frame, receive::{pipeline::Pipeline, queue::{AudioPts, PacketQueue}, timing::Timing}};
+use bark_core::audio::{Format, FrameCount};
+use bark_core::receive::pipeline::Pipeline;
+use bark_core::receive::queue::{AudioPts, PacketQueue};
+use bark_core::receive::timing::Timing;
 use bark_protocol::time::{SampleDuration, Timestamp, TimestampDelta};
 use bark_protocol::types::stats::receiver::StreamStatus;
 use bark_protocol::types::AudioPacketHeader;
@@ -20,7 +22,7 @@ pub struct DecodeStream {
 }
 
 impl DecodeStream {
-    pub fn new(header: &AudioPacketHeader, output: OutputRef, metrics: MetricsSender) -> Self {
+    pub fn new<F: Format>(header: &AudioPacketHeader, output: OutputRef<F>, metrics: MetricsSender) -> Self {
         let queue = PacketQueue::new(header);
         let (tx, rx) = queue::channel(queue);
 
@@ -53,10 +55,10 @@ impl DecodeStream {
     }
 }
 
-struct State {
+struct State<F: Format> {
     queue: QueueReceiver,
-    pipeline: Pipeline,
-    output: OutputRef,
+    pipeline: Pipeline<F>,
+    output: OutputRef<F>,
     metrics: MetricsSender,
 }
 
@@ -79,7 +81,7 @@ impl Default for DecodeStats {
     }
 }
 
-fn run_stream(mut stream: State, stats_tx: Arc<Mutex<DecodeStats>>) {
+fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>) {
     let mut stats = DecodeStats::default();
 
     loop {
@@ -94,7 +96,7 @@ fn run_stream(mut stream: State, stats_tx: Arc<Mutex<DecodeStats>>) {
             .unwrap_or_default();
 
         // pass packet through decode pipeline
-        let mut buffer = [Frame::zeroed(); FRAMES_PER_PACKET * 2];
+        let mut buffer = [F::Frame::zeroed(); FRAMES_PER_PACKET * 2];
         let frames = stream.pipeline.process(packet, &mut buffer);
         let buffer = &buffer[0..frames];
 

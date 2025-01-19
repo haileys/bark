@@ -1,61 +1,76 @@
+use std::marker::PhantomData;
+
 use alsa::Direction;
-use alsa::pcm::PCM;
-use bark_core::audio::{Frame, self};
+use alsa::pcm::{IoFormat, PCM};
+
+use bark_core::audio::{self, Format, Frames, F32, S16};
 use bark_protocol::time::SampleDuration;
 
 use crate::audio::config::DeviceOpt;
 use crate::audio::alsa::config::{self, OpenError};
 
-pub struct Output {
+pub struct Output<F: Format> {
     pcm: PCM,
+    _phantom: PhantomData<F>,
 }
 
-impl Output {
+impl<F: Format> Output<F> {
     pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
-        let pcm = config::open_pcm(opt, Direction::Playback)?;
-        Ok(Output { pcm })
+        let pcm = config::open_pcm(opt, F::KIND, Direction::Playback)?;
+        Ok(Output { pcm, _phantom: PhantomData })
     }
 
-    pub fn write(&self, mut audio: &[Frame]) -> Result<(), alsa::Error> {
-        while audio.len() > 0 {
-            let n = self.write_partial(audio)?;
-            audio = &audio[n..];
-        }
-
-        Ok(())
-    }
-
-    fn write_partial(&self, audio: &[Frame]) -> Result<usize, alsa::Error> {
-        let io = unsafe {
-            // the checked versions of this function call
-            // snd_pcm_hw_params_current which mallocs under the hood
-            self.pcm.io_unchecked::<f32>()
-        };
-
-        loop {
-            // try to write audio
-            let err = match io.writei(audio::as_interleaved(audio)) {
-                Ok(n) => { return Ok(n) },
-                Err(e) => e,
-            };
-
-            // handle recoverable errors
-            match err.errno() {
-                | libc::EPIPE // underrun
-                | libc::ESTRPIPE // stream suspended
-                | libc::EINTR // interrupted syscall
-                => {
-                    log::warn!("recovering from error: {}", err.errno());
-                    // try to recover
-                    self.pcm.recover(err.errno(), false)?;
-                }
-                _ => { return Err(err.into()); }
-            }
+    pub fn write(&self, frames: &[F::Frame]) -> Result<(), alsa::Error> {
+        match F::frames(frames) {
+            Frames::S16(frames) => write_impl::<S16>(&self.pcm, frames),
+            Frames::F32(frames) => write_impl::<F32>(&self.pcm, frames),
         }
     }
 
     pub fn delay(&self) -> Result<SampleDuration, alsa::Error> {
         let frames = self.pcm.delay()?;
         Ok(SampleDuration::from_frame_count(frames.try_into().unwrap()))
+    }
+}
+
+fn write_impl<F: Format>(pcm: &PCM, mut frames: &[F::Frame]) -> Result<(), alsa::Error>
+    where F::Sample: IoFormat
+{
+    while frames.len() > 0 {
+        let n = write_partial_impl::<F>(pcm, frames)?;
+        frames = &frames[n..];
+    }
+
+    Ok(())
+}
+
+fn write_partial_impl<F: Format>(pcm: &PCM, samples: &[F::Frame]) -> Result<usize, alsa::Error>
+    where F::Sample: IoFormat
+{
+    let io = unsafe {
+        // the checked versions of this function call
+        // snd_pcm_hw_params_current which mallocs under the hood
+        pcm.io_unchecked::<F::Sample>()
+    };
+
+    loop {
+        // try to write audio
+        let err = match io.writei(audio::as_interleaved::<F>(samples)) {
+            Ok(n) => { return Ok(n) },
+            Err(e) => e,
+        };
+
+        // handle recoverable errors
+        match err.errno() {
+            | libc::EPIPE // underrun
+            | libc::ESTRPIPE // stream suspended
+            | libc::EINTR // interrupted syscall
+            => {
+                log::warn!("recovering from error: {}", err.errno());
+                // try to recover
+                pcm.recover(err.errno(), false)?;
+            }
+            _ => { return Err(err.into()); }
+        }
     }
 }

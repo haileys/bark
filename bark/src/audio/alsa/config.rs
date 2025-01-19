@@ -1,6 +1,8 @@
 use alsa::{Direction, PCM, pcm::{HwParams, Format, Access}, ValueOr};
-use bark_protocol::time::SampleDuration;
 use thiserror::Error;
+
+use bark_core::audio::FormatKind;
+use bark_protocol::time::SampleDuration;
 
 use crate::audio::config::DeviceOpt;
 
@@ -14,7 +16,7 @@ pub enum OpenError {
     InvalidBufferSize { min: i64, max: i64 },
 }
 
-pub fn open_pcm(opt: &DeviceOpt, direction: Direction)
+pub fn open_pcm(opt: &DeviceOpt, format: FormatKind, direction: Direction)
     -> Result<PCM, OpenError>
 {
     let device_name = opt.device.as_deref().unwrap_or("default");
@@ -24,7 +26,10 @@ pub fn open_pcm(opt: &DeviceOpt, direction: Direction)
         let hwp = HwParams::any(&pcm)?;
         hwp.set_channels(bark_protocol::CHANNELS.0.into())?;
         hwp.set_rate(bark_protocol::SAMPLE_RATE.0, ValueOr::Nearest)?;
-        hwp.set_format(Format::float())?;
+        hwp.set_format(match format {
+            FormatKind::F32 => Format::float(),
+            FormatKind::S16 => Format::s16(),
+        })?;
         hwp.set_access(Access::RWInterleaved)?;
         set_period_size(&hwp, opt.period)?;
         set_buffer_size(&hwp, opt.buffer)?;

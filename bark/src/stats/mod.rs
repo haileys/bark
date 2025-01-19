@@ -25,7 +25,7 @@ pub struct StatsOpt {
 }
 
 pub fn run(opt: StatsOpt) -> Result<(), RunError> {
-    let socket = Socket::open(opt.socket)
+    let socket = Socket::open(&opt.socket)
         .map_err(RunError::Listen)?;
 
     let protocol = Arc::new(ProtocolSocket::new(socket));

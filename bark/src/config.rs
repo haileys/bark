@@ -1,11 +1,9 @@
 use std::env;
-use std::fmt::Display;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::str::FromStr;
 
+use derive_more::{Display, FromStr};
 use serde::Deserialize;
-use thiserror::Error;
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -23,7 +21,7 @@ pub struct Source {
     #[serde(default)]
     input: Device,
     delay_ms: Option<u64>,
-    format: Option<Format>,
+    codec: Option<Codec>,
 }
 
 #[derive(Deserialize, Default)]
@@ -31,42 +29,16 @@ pub struct Metrics {
     listen: Option<SocketAddr>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Display, FromStr, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
-pub enum Format {
+pub enum Codec {
+    #[display("s16le")]
     S16LE,
+    #[display("f32le")]
     F32LE,
     #[cfg(feature = "opus")]
+    #[display("opus")]
     Opus,
-}
-
-#[derive(Debug, Error)]
-#[error("unknown format")]
-pub struct UnknownFormat;
-
-impl FromStr for Format {
-    type Err = UnknownFormat;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "s16le" => Ok(Format::S16LE),
-            "f32le" => Ok(Format::F32LE),
-            #[cfg(feature = "opus")]
-            "opus" => Ok(Format::Opus),
-            _ => Err(UnknownFormat),
-        }
-    }
-}
-
-impl Display for Format {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Format::S16LE => write!(f, "s16le"),
-            Format::F32LE => write!(f, "f32le"),
-            #[cfg(feature = "opus")]
-            Format::Opus => write!(f, "opus"),
-        }
-    }
 }
 
 #[derive(Deserialize, Default)]
@@ -80,6 +52,16 @@ pub struct Device {
     device: Option<String>,
     period: Option<u64>,
     buffer: Option<u64>,
+    format: Option<Format>,
+}
+
+#[derive(Deserialize, Display, FromStr, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Format {
+    #[display("s16")]
+    S16,
+    #[display("f32")]
+    F32,
 }
 
 fn set_env<T: ToString>(name: &str, value: T) {
@@ -98,10 +80,12 @@ pub fn load_into_env(config: &Config) {
     set_env_option("BARK_SOURCE_INPUT_DEVICE", config.source.input.device.as_ref());
     set_env_option("BARK_SOURCE_INPUT_PERIOD", config.source.input.period);
     set_env_option("BARK_SOURCE_INPUT_BUFFER", config.source.input.buffer);
-    set_env_option("BARK_SOURCE_FORMAT", config.source.format.as_ref());
+    set_env_option("BARK_SOURCE_INPUT_FORMAT", config.source.input.format);
+    set_env_option("BARK_SOURCE_CODEC", config.source.codec);
     set_env_option("BARK_RECEIVE_OUTPUT_DEVICE", config.receive.output.device.as_ref());
     set_env_option("BARK_RECEIVE_OUTPUT_PERIOD", config.receive.output.period);
     set_env_option("BARK_RECEIVE_OUTPUT_BUFFER", config.receive.output.buffer);
+    set_env_option("BARK_RECEIVE_OUTPUT_FORMAT", config.receive.output.format);
     set_env_option("BARK_METRICS_LISTEN", config.metrics.listen);
 }
 

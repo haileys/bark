@@ -12,7 +12,7 @@ bark-protocol = { path = "bark-protocol" }
 
 bitflags = { version = "2.6", features = ["bytemuck"] }
 bytemuck = { version = "1.18", features = ["derive", "must_cast"] }
-derive_more = { version = "1.0", features = ["into", "display"] }
+derive_more = { version = "1.0", features = ["into", "display", "from_str"] }
 heapless = "0.8"
 log = "0.4"
 thiserror = "2.0"

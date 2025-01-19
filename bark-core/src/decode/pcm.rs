@@ -1,8 +1,9 @@
 use core::fmt::{self, Display};
 
-use crate::audio;
+use bytemuck::Zeroable;
 
-use super::{Decode, DecodeError, FrameBuffer};
+use crate::audio::{self, f32_to_s16, s16_to_f32, Format, FramesMut, F32, S16};
+use super::{Decode, DecodeError};
 
 pub struct S16LEDecoder;
 
@@ -13,13 +14,17 @@ impl Display for S16LEDecoder {
 }
 
 impl Decode for S16LEDecoder {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
-        decode_packed(bytes, out, |bytes| {
-            let input = i16::from_le_bytes(bytes);
-            let scale = i16::MAX as f32;
-            input as f32 / scale
-        })
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: FramesMut) -> Result<(), DecodeError> {
+        decode_packed(bytes, out, decode_s16le_to_i16, decode_s16le_to_f32)
     }
+}
+
+fn decode_s16le_to_i16(bytes: [u8; 2]) -> i16 {
+    i16::from_le_bytes(bytes)
+}
+
+fn decode_s16le_to_f32(bytes: [u8; 2]) -> f32 {
+    s16_to_f32(i16::from_le_bytes(bytes))
 }
 
 pub struct F32LEDecoder;
@@ -31,22 +36,43 @@ impl Display for F32LEDecoder {
 }
 
 impl Decode for F32LEDecoder {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
-        decode_packed(bytes, out, f32::from_le_bytes)
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: FramesMut) -> Result<(), DecodeError> {
+        decode_packed(bytes, out, decode_f32le_to_i16, decode_f32le_to_f32)
     }
+}
+
+fn decode_f32le_to_i16(bytes: [u8; 4]) -> i16 {
+    let input = f32::from_le_bytes(bytes);
+    f32_to_s16(input)
+}
+
+fn decode_f32le_to_f32(bytes: [u8; 4]) -> f32 {
+    f32::from_le_bytes(bytes)
 }
 
 fn decode_packed<const N: usize>(
     bytes: Option<&[u8]>,
-    out: &mut FrameBuffer,
-    func: impl Fn([u8; N]) -> f32,
+    out: FramesMut,
+    decode_s16: impl Fn([u8; N]) -> i16,
+    decode_f32: impl Fn([u8; N]) -> f32,
 ) -> Result<(), DecodeError> {
-    let out_samples = audio::as_interleaved_mut(out);
+    match out {
+        FramesMut::S16(out) => decode_packed_impl::<S16, N>(bytes, out, decode_s16),
+        FramesMut::F32(out) => decode_packed_impl::<F32, N>(bytes, out, decode_f32),
+    }
+}
+
+fn decode_packed_impl<F: Format, const N: usize>(
+    bytes: Option<&[u8]>,
+    out: &mut [F::Frame],
+    decode: impl Fn([u8; N]) -> F::Sample,
+) -> Result<(), DecodeError> {
+    let out_samples = audio::as_interleaved_mut::<F>(out);
 
     let Some(bytes) = bytes else {
         // PCM codecs have no packet loss correction
         // just zero fill and return
-        out_samples.fill(0.0);
+        out_samples.fill(F::Sample::zeroed());
         return Ok(());
     };
 
@@ -57,7 +83,7 @@ fn decode_packed<const N: usize>(
         // but for now use try_into to turn a &[u8] (guaranteed len == width)
         // into a [u8; width]
         let input = input.try_into().unwrap();
-        *output = func(input);
+        *output = decode(input);
     }
 
     Ok(())

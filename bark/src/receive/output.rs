@@ -1,20 +1,22 @@
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use bark_core::audio::Format;
+
 use crate::audio::Output;
 
-pub struct OwnedOutput {
-    output: Arc<Mutex<Option<Output>>>,
+pub struct OwnedOutput<F: Format> {
+    output: Arc<Mutex<Option<Output<F>>>>,
 }
 
-impl OwnedOutput {
-    pub fn new(output: Output) -> Self {
+impl<F: Format> OwnedOutput<F> {
+    pub fn new(output: Output<F>) -> Self {
         Self { output: Arc::new(Mutex::new(Some(output))) }
     }
 
     /// TODO - this may block for the duration of an alsa_pcm_write
     /// fix this
-    pub fn steal(&mut self) -> OutputRef {
+    pub fn steal(&mut self) -> OutputRef<F> {
         let output = self.output.lock().unwrap().take();
         self.output = Arc::new(Mutex::new(output));
 
@@ -23,12 +25,12 @@ impl OwnedOutput {
 }
 
 #[derive(Clone)]
-pub struct OutputRef {
-    output: Arc<Mutex<Option<Output>>>,
+pub struct OutputRef<F: Format> {
+    output: Arc<Mutex<Option<Output<F>>>>,
 }
 
-impl OutputRef {
-    pub fn lock(&self) -> Option<OutputLock> {
+impl<F: Format> OutputRef<F> {
+    pub fn lock(&self) -> Option<OutputLock<F>> {
         let guard = self.output.lock().unwrap();
 
         if guard.is_some() {
@@ -39,19 +41,19 @@ impl OutputRef {
     }
 }
 
-pub struct OutputLock<'a> {
-    guard: MutexGuard<'a, Option<Output>>,
+pub struct OutputLock<'a, F: Format> {
+    guard: MutexGuard<'a, Option<Output<F>>>,
 }
 
-impl<'a> Deref for OutputLock<'a> {
-    type Target = Output;
+impl<'a, F: Format> Deref for OutputLock<'a, F> {
+    type Target = Output<F>;
 
     fn deref(&self) -> &Self::Target {
         self.guard.as_ref().unwrap()
     }
 }
 
-impl<'a> DerefMut for OutputLock<'a> {
+impl<'a, F: Format> DerefMut for OutputLock<'a, F> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.guard.as_mut().unwrap()
     }

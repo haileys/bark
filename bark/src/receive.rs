@@ -1,6 +1,7 @@
 use std::array;
 use std::time::Duration;
 
+use bark_core::audio::{Format, F32, S16};
 use bytemuck::Zeroable;
 use structopt::StructOpt;
 
@@ -13,6 +14,7 @@ use bark_protocol::packet::{Audio, PacketKind, StatsReply};
 
 use crate::audio::config::{DEFAULT_PERIOD, DEFAULT_BUFFER, DeviceOpt};
 use crate::audio::Output;
+use crate::config;
 use crate::receive::output::OutputRef;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
 use crate::stats::{self, server::MetricsSender};
@@ -27,9 +29,9 @@ pub mod output;
 pub mod queue;
 pub mod stream;
 
-pub struct Receiver {
+pub struct Receiver<F: Format> {
     stream: Option<Stream>,
-    output: OwnedOutput,
+    output: OwnedOutput<F>,
     metrics: MetricsSender,
 }
 
@@ -40,7 +42,7 @@ struct Stream {
 }
 
 impl Stream {
-    pub fn new(header: &AudioPacketHeader, output: OutputRef, metrics: MetricsSender) -> Self {
+    pub fn new<F: Format>(header: &AudioPacketHeader, output: OutputRef<F>, metrics: MetricsSender) -> Self {
         let decode = DecodeStream::new(header, output, metrics);
 
         Stream {
@@ -55,8 +57,8 @@ impl Stream {
     }
 }
 
-impl Receiver {
-    pub fn new(output: Output, metrics: MetricsSender) -> Self {
+impl<F: Format> Receiver<F> {
+    pub fn new(output: Output<F>, metrics: MetricsSender) -> Self {
         Receiver {
             stream: None,
             output: OwnedOutput::new(output),
@@ -181,10 +183,29 @@ pub struct ReceiveOpt {
     /// Size of decoded audio buffer in frames
     #[structopt(long, env = "BARK_RECEIVE_OUTPUT_BUFFER")]
     pub output_buffer: Option<u64>,
+
+    #[structopt(long, env = "BARK_RECEIVE_OUTPUT_FORMAT", default_value = "f32")]
+    pub output_format: config::Format,
 }
 
 pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<(), RunError> {
-    let output = Output::new(&DeviceOpt {
+    let socket = Socket::open(&opt.socket)
+        .map_err(RunError::Listen)?;
+
+    let metrics = stats::server::start(&metrics).await?;
+
+    match opt.output_format {
+        config::Format::S16 => run_format::<S16>(opt, socket, metrics).await,
+        config::Format::F32 => run_format::<F32>(opt, socket, metrics).await,
+    }
+}
+
+async fn run_format<F: Format>(
+    opt: ReceiveOpt,
+    socket: Socket,
+    metrics: stats::server::MetricsSender,
+) -> Result<(), RunError> {
+    let output = Output::<F>::new(&DeviceOpt {
         device: opt.output_device,
         period: opt.output_period
             .map(SampleDuration::from_frame_count)
@@ -194,11 +215,6 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
             .unwrap_or(DEFAULT_BUFFER),
     }).map_err(RunError::OpenAudioDevice)?;
 
-    let socket = Socket::open(opt.socket)
-        .map_err(RunError::Listen)?;
-
-    let metrics = stats::server::start(&metrics).await?;
-
     let receiver = Receiver::new(output, metrics.clone());
 
     thread::start("bark/network", move || {
@@ -206,10 +222,10 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
     }).await
 }
 
-fn network_thread(
+fn network_thread<F: Format>(
     socket: Socket,
     metrics: MetricsSender,
-    mut receiver: Receiver,
+    mut receiver: Receiver<F>,
 ) -> Result<(), RunError> {
     let node = stats::node::get();
 

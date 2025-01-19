@@ -51,7 +51,7 @@ pub struct Socket {
 pub struct PeerId(SocketAddr);
 
 impl Socket {
-    pub fn open(opt: SocketOpt) -> Result<Socket, ListenError> {
+    pub fn open(opt: &SocketOpt) -> Result<Socket, ListenError> {
         let group = *opt.multicast.ip();
         let port = opt.multicast.port();
 

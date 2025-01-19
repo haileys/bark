@@ -2,7 +2,7 @@ use core::fmt::{self, Display};
 
 use bark_protocol::types::AudioPacketFormat;
 
-use crate::audio::{Frame, self};
+use crate::audio::{self, f32_to_s16, s16_to_f32, Format, Frames, F32, S16};
 
 use super::{Encode, EncodeError};
 
@@ -19,13 +19,17 @@ impl Encode for S16LEEncoder {
         AudioPacketFormat::S16LE
     }
 
-    fn encode_packet(&mut self, frames: &[Frame], out: &mut [u8]) -> Result<usize, EncodeError> {
-        encode_packed(frames, out, |sample| {
-            let scale = i16::MAX as f32;
-            let sample = sample.clamp(-1.0, 1.0) * scale;
-            i16::to_le_bytes(sample as i16)
-        })
+    fn encode_packet(&mut self, frames: Frames, out: &mut [u8]) -> Result<usize, EncodeError> {
+        encode_packed(frames, out, encode_i16_to_s16le, encode_f32_to_s16le)
     }
+}
+
+fn encode_i16_to_s16le(sample: i16) -> [u8; 2] {
+    i16::to_le_bytes(sample)
+}
+
+fn encode_f32_to_s16le(sample: f32) -> [u8; 2] {
+    i16::to_le_bytes(f32_to_s16(sample))
 }
 
 pub struct F32LEEncoder;
@@ -41,17 +45,37 @@ impl Encode for F32LEEncoder {
         AudioPacketFormat::F32LE
     }
 
-    fn encode_packet(&mut self, frames: &[Frame], out: &mut [u8]) -> Result<usize, EncodeError> {
-        encode_packed(frames, out, f32::to_le_bytes)
+    fn encode_packet(&mut self, frames: Frames, out: &mut [u8]) -> Result<usize, EncodeError> {
+        encode_packed(frames, out, encode_i16_to_f32le, encode_f32_to_f32le)
     }
 }
 
+fn encode_i16_to_f32le(sample: i16) -> [u8; 4] {
+    f32::to_le_bytes(s16_to_f32(sample))
+}
+
+fn encode_f32_to_f32le(sample: f32) -> [u8; 4] {
+    f32::to_le_bytes(sample)
+}
+
 fn encode_packed<const N: usize>(
-    frames: &[Frame],
+    frames: Frames,
     out: &mut [u8],
-    func: impl Fn(f32) -> [u8; N],
+    encode_s16: impl Fn(i16) -> [u8; N],
+    encode_f32: impl Fn(f32) -> [u8; N],
 ) -> Result<usize, EncodeError> {
-    let samples = audio::as_interleaved(frames);
+    match frames {
+        Frames::S16(frames) => encode_packed_impl::<S16, N>(frames, out, encode_s16),
+        Frames::F32(frames) => encode_packed_impl::<F32, N>(frames, out, encode_f32),
+    }
+}
+
+fn encode_packed_impl<F: Format, const N: usize>(
+    frames: &[F::Frame],
+    out: &mut [u8],
+    func: impl Fn(F::Sample) -> [u8; N],
+) -> Result<usize, EncodeError> {
+    let samples = audio::as_interleaved::<F>(frames);
     let out = check_length(out, samples.len() * N)?;
 
     for (output, input) in out.chunks_exact_mut(N).zip(samples) {

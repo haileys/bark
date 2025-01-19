@@ -1,4 +1,4 @@
-use bark_core::audio::Frame;
+use bark_core::audio::Format;
 use bark_protocol::time::{SampleDuration, Timestamp};
 use thiserror::Error;
 
@@ -19,34 +19,34 @@ pub enum Error {
     Alsa(#[from] ::alsa::Error),
 }
 
-pub struct Input {
-    alsa: alsa::input::Input,
+pub struct Input<F: Format> {
+    alsa: alsa::input::Input<F>,
 }
 
-impl Input {
+impl<F: Format> Input<F> {
     pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
         Ok(Input {
             alsa: alsa::input::Input::new(opt)?,
         })
     }
 
-    pub fn read(&self, audio: &mut [Frame]) -> Result<Timestamp, Error> {
+    pub fn read(&self, audio: &mut [F::Frame]) -> Result<Timestamp, Error> {
         Ok(self.alsa.read(audio)?)
     }
 }
 
-pub struct Output {
-    alsa: alsa::output::Output,
+pub struct Output<F: Format> {
+    alsa: alsa::output::Output<F>,
 }
 
-impl Output {
+impl<F: Format> Output<F> {
     pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
         Ok(Output {
             alsa: alsa::output::Output::new(opt)?,
         })
     }
 
-    pub fn write(&self, audio: &[Frame]) -> Result<(), Error> {
+    pub fn write(&self, audio: &[F::Frame]) -> Result<(), Error> {
         Ok(self.alsa.write(audio)?)
     }
 

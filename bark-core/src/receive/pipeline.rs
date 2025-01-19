@@ -4,19 +4,19 @@ use bytemuck::Zeroable;
 use bark_protocol::packet::Audio;
 use bark_protocol::types::AudioPacketHeader;
 
-use crate::audio::Frame;
+use crate::audio::Format;
 use crate::decode::Decoder;
 use crate::receive::resample::Resampler;
 use crate::receive::timing::{RateAdjust, Timing};
 
-pub struct Pipeline {
+pub struct Pipeline<F: Format> {
     /// None indicates error creating decoder, we cannot decode this stream
     decoder: Option<Decoder>,
-    resampler: Resampler,
+    resampler: Resampler<F>,
     rate_adjust: RateAdjust,
 }
 
-impl Pipeline {
+impl<F: Format> Pipeline<F> {
     pub fn new(header: &AudioPacketHeader) -> Self {
         let decoder = match Decoder::new(header) {
             Ok(dec) => {
@@ -45,16 +45,16 @@ impl Pipeline {
         let _ = self.resampler.set_input_rate(rate.0);
     }
 
-    pub fn process(&mut self, packet: Option<&Audio>, out: &mut [Frame]) -> usize {
+    pub fn process(&mut self, packet: Option<&Audio>, out: &mut [F::Frame]) -> usize {
         // decode packet
-        let mut decode_buffer = [Frame::zeroed(); FRAMES_PER_PACKET];
+        let mut decode_buffer = [F::Frame::zeroed(); FRAMES_PER_PACKET];
 
         if let Some(decoder) = self.decoder.as_mut() {
-            match decoder.decode(packet, &mut decode_buffer) {
+            match decoder.decode(packet, F::frames_mut(&mut decode_buffer)) {
                 Ok(()) => {}
                 Err(e) => {
                     log::warn!("error in decoder, skipping packet: {e}");
-                    decode_buffer.fill(Frame::zeroed());
+                    decode_buffer.fill(F::Frame::zeroed());
                 }
             }
         }

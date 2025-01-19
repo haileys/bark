@@ -7,11 +7,10 @@ use core::fmt::Display;
 
 use thiserror::Error;
 
-use bark_protocol::FRAMES_PER_PACKET;
 use bark_protocol::packet::Audio;
 use bark_protocol::types::{AudioPacketHeader, AudioPacketFormat};
 
-use crate::audio::Frame;
+use crate::audio::FramesMut;
 
 #[derive(Debug, Error)]
 pub enum NewDecoderError {
@@ -37,8 +36,6 @@ pub struct Decoder {
     decode: DecodeFormat,
 }
 
-pub type FrameBuffer = [Frame; FRAMES_PER_PACKET];
-
 impl Decoder {
     pub fn new(header: &AudioPacketHeader) -> Result<Self, NewDecoderError> {
         let decode = match header.format {
@@ -56,14 +53,14 @@ impl Decoder {
         &self.decode as &dyn Display
     }
 
-    pub fn decode(&mut self, packet: Option<&Audio>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
+    pub fn decode(&mut self, packet: Option<&Audio>, out: FramesMut) -> Result<(), DecodeError> {
         let bytes = packet.map(|packet| packet.buffer_bytes());
         self.decode.decode_packet(bytes, out)
     }
 }
 
 trait Decode: Display {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError>;
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: FramesMut) -> Result<(), DecodeError>;
 }
 
 enum DecodeFormat {
@@ -74,7 +71,7 @@ enum DecodeFormat {
 }
 
 impl Decode for DecodeFormat {
-    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: &mut FrameBuffer) -> Result<(), DecodeError> {
+    fn decode_packet(&mut self, bytes: Option<&[u8]>, out: FramesMut) -> Result<(), DecodeError> {
         match self {
             DecodeFormat::S16LE(dec) => dec.decode_packet(bytes, out),
             DecodeFormat::F32LE(dec) => dec.decode_packet(bytes, out),

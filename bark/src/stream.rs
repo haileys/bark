@@ -1,7 +1,9 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bark_core::audio::Frame;
+use bark_core::audio::{Format, F32, S16};
 use bark_core::encode::Encode;
 use bark_core::encode::pcm::{S16LEEncoder, F32LEEncoder};
 use bark_protocol::FRAMES_PER_PACKET;
@@ -19,7 +21,7 @@ use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId};
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
-use crate::stats::server::MetricsOpt;
+use crate::stats::server::{MetricsOpt, MetricsSender};
 use crate::{config, stats, thread, time};
 use crate::RunError;
 
@@ -40,6 +42,9 @@ pub struct StreamOpt {
     #[structopt(long, env = "BARK_SOURCE_INPUT_BUFFER")]
     pub input_buffer: Option<u64>,
 
+    #[structopt(long, env = "BARK_SOURCE_INPUT_FORMAT", default_value = "f32")]
+    pub input_format: config::Format,
+
     #[structopt(
         long,
         env = "BARK_SOURCE_DELAY_MS",
@@ -49,47 +54,24 @@ pub struct StreamOpt {
 
     #[structopt(
         long,
-        env = "BARK_SOURCE_FORMAT",
+        env = "BARK_SOURCE_CODEC",
         default_value = "f32le",
     )]
-    pub format: config::Format,
+    pub format: config::Codec,
 }
 
 pub async fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
-    let input = Input::new(&DeviceOpt {
-        device: opt.input_device,
-        period: opt.input_period
-            .map(SampleDuration::from_frame_count)
-            .unwrap_or(DEFAULT_PERIOD),
-        buffer: opt.input_buffer
-            .map(SampleDuration::from_frame_count)
-            .unwrap_or(DEFAULT_BUFFER),
-    })?;
-
-    let socket = Socket::open(opt.socket)?;
-
+    let socket = Socket::open(&opt.socket)?;
     let protocol = Arc::new(ProtocolSocket::new(socket));
-
-    let delay = Duration::from_millis(opt.delay_ms);
-    let delay = SampleDuration::from_std_duration_lossy(delay);
 
     let sid = generate_session_id();
 
-    let encoder: Box<dyn Encode> = match opt.format {
-        config::Format::S16LE => Box::new(S16LEEncoder),
-        config::Format::F32LE => Box::new(F32LEEncoder),
-        #[cfg(feature = "opus")]
-        config::Format::Opus => Box::new(OpusEncoder::new()?),
-    };
-
-    log::info!("instantiated encoder: {}", encoder);
-
     let metrics = stats::server::start(&metrics).await?;
 
-    let audio_th = thread::start("bark/audio", {
-        let protocol = protocol.clone();
-        move || audio_thread(input, encoder, delay, sid, protocol)
-    });
+    let audio_th = match opt.input_format {
+        config::Format::S16 => start_audio_thread::<S16>(opt, protocol.clone(), sid, metrics)?,
+        config::Format::F32 => start_audio_thread::<F32>(opt, protocol.clone(), sid, metrics)?,
+    };
 
     let network_th = thread::start("bark/network", {
         move || network_thread(sid, protocol)
@@ -99,8 +81,44 @@ pub async fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
     Ok(())
 }
 
-fn audio_thread(
-    input: Input,
+fn start_audio_thread<F: Format>(
+    opt: StreamOpt,
+    protocol: Arc<ProtocolSocket>,
+    sid: SessionId,
+    metrics: MetricsSender,
+) -> Result<Pin<Box<dyn Future<Output = ()>>>, RunError> {
+    let input = Input::<F>::new(&DeviceOpt {
+        device: opt.input_device,
+        period: opt.input_period
+            .map(SampleDuration::from_frame_count)
+            .unwrap_or(DEFAULT_PERIOD),
+        buffer: opt.input_buffer
+            .map(SampleDuration::from_frame_count)
+            .unwrap_or(DEFAULT_BUFFER),
+    })?;
+
+    let encoder: Box<dyn Encode> = match opt.format {
+        config::Codec::S16LE => Box::new(S16LEEncoder),
+        config::Codec::F32LE => Box::new(F32LEEncoder),
+        #[cfg(feature = "opus")]
+        config::Codec::Opus => Box::new(OpusEncoder::new()?),
+    };
+
+    log::info!("instantiated encoder: {}", encoder);
+
+    let delay = Duration::from_millis(opt.delay_ms);
+    let delay = SampleDuration::from_std_duration_lossy(delay);
+
+    let audio_th = thread::start("bark/audio", {
+        let protocol = protocol.clone();
+        move || audio_thread(input, encoder, delay, sid, protocol)
+    });
+
+    Ok(Box::pin(audio_th))
+}
+
+fn audio_thread<F: Format>(
+    input: Input<F>,
     mut encoder: Box<dyn Encode>,
     delay: SampleDuration,
     sid: SessionId,
@@ -115,7 +133,7 @@ fn audio_thread(
     };
 
     loop {
-        let mut audio_buffer = [Frame::zeroed(); FRAMES_PER_PACKET];
+        let mut audio_buffer = [F::Frame::zeroed(); FRAMES_PER_PACKET];
 
         // read audio input
         let timestamp = match input.read(&mut audio_buffer) {
@@ -128,7 +146,7 @@ fn audio_thread(
 
         // encode audio
         let mut encode_buffer = [0; Audio::MAX_BUFFER_LENGTH];
-        let encoded_data = match encoder.encode_packet(&audio_buffer, &mut encode_buffer) {
+        let encoded_data = match encoder.encode_packet(F::frames(&audio_buffer), &mut encode_buffer) {
             Ok(size) => &encode_buffer[0..size],
             Err(e) => {
                 log::error!("error encoding audio: {e}");
