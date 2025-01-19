@@ -205,7 +205,7 @@ async fn run_format<F: Format>(
     socket: Socket,
     metrics: stats::server::MetricsSender,
 ) -> Result<(), RunError> {
-    let output = Output::<F>::new(&DeviceOpt {
+    let device_opt = DeviceOpt {
         device: opt.output_device,
         period: opt.output_period
             .map(SampleDuration::from_frame_count)
@@ -213,7 +213,10 @@ async fn run_format<F: Format>(
         buffer: opt.output_buffer
             .map(SampleDuration::from_frame_count)
             .unwrap_or(DEFAULT_BUFFER),
-    }).map_err(RunError::OpenAudioDevice)?;
+    };
+
+    let output = Output::<F>::new(&device_opt, metrics.clone())
+        .map_err(RunError::OpenAudioDevice)?;
 
     let receiver = Receiver::new(output, metrics.clone());
 

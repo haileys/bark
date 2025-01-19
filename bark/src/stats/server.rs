@@ -45,6 +45,10 @@ impl MetricsSender {
         self.data.buffer_delay.store(value, Ordering::Relaxed);
     }
 
+    pub fn increment_buffer_underruns(&self) {
+        self.data.buffer_underruns.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn observe_queued_packets(&self, count: usize) {
         self.data.queued_packets.store(count, Ordering::Relaxed);
     }
@@ -80,6 +84,7 @@ impl MetricsSender {
 struct MetricsData {
     audio_offset: AtomicI64,
     buffer_delay: AtomicU64,
+    buffer_underruns: AtomicU64,
     queued_packets: AtomicUsize,
     network_latency: AtomicU64,
     packets_received: AtomicU64,
@@ -94,6 +99,7 @@ impl Default for MetricsData {
         MetricsData {
             audio_offset: AtomicI64::new(i64::MIN),
             buffer_delay: Default::default(),
+            buffer_underruns: Default::default(),
             queued_packets: Default::default(),
             network_latency: Default::default(),
             packets_received: Default::default(),
@@ -139,6 +145,7 @@ fn render_metrics(data: &MetricsData) -> Result<String, std::fmt::Error> {
 
     // TODO - rename this one
     render.gauge("bark_receiver_buffer_length_usec", data.buffer_delay.load(Ordering::Relaxed))?;
+    render.counter("bark_receiver_buffer_underruns", data.buffer_underruns.load(Ordering::Relaxed))?;
 
     let network_latency_usec = data.network_latency.load(Ordering::Relaxed);
     if network_latency_usec != 0 {
