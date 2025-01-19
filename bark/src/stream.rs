@@ -85,7 +85,7 @@ fn start_audio_thread<F: Format>(
     opt: StreamOpt,
     protocol: Arc<ProtocolSocket>,
     sid: SessionId,
-    metrics: MetricsSender,
+    _metrics: MetricsSender,
 ) -> Result<Pin<Box<dyn Future<Output = ()>>>, RunError> {
     let input = Input::<F>::new(&DeviceOpt {
         device: opt.input_device,
