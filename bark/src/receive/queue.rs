@@ -16,6 +16,13 @@ struct Shared {
     notify: Condvar,
 }
 
+impl Shared {
+    fn disconnect(&self) {
+        let mut queue = self.queue.lock().unwrap();
+        *queue = None;
+    }
+}
+
 pub fn channel(queue: PacketQueue) -> (QueueSender, QueueReceiver) {
     let shared = Arc::new(Shared {
         queue: Mutex::new(Some(queue)),
@@ -48,6 +55,12 @@ impl QueueSender {
     }
 }
 
+impl Drop for QueueSender {
+    fn drop(&mut self) {
+        self.shared.disconnect();
+    }
+}
+
 impl QueueReceiver {
     pub fn recv(&self) -> Result<(Option<AudioPts>, usize), Disconnected> {
         let mut queue_lock = self.shared.queue.lock().unwrap();
@@ -77,5 +90,11 @@ impl QueueReceiver {
     pub fn is_empty(&self) -> bool {
         let queue = self.shared.queue.lock().unwrap();
         queue.as_ref().map(|q| q.len() == 0).unwrap_or(true)
+    }
+}
+
+impl Drop for QueueReceiver {
+    fn drop(&mut self) {
+        self.shared.disconnect();
     }
 }
