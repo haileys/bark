@@ -69,7 +69,6 @@ struct State<F: Format> {
 #[derive(Clone)]
 pub struct DecodeStats {
     pub status: StreamStatus,
-    pub buffered: SampleDuration,
     pub audio_latency: TimestampDelta,
     pub output_latency: SampleDuration,
 }
@@ -78,7 +77,6 @@ impl Default for DecodeStats {
     fn default() -> Self {
         DecodeStats {
             status: StreamStatus::Seek,
-            buffered: SampleDuration::zero(),
             audio_latency: TimestampDelta::zero(),
             output_latency: SampleDuration::zero(),
         }
