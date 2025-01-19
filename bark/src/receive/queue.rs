@@ -40,7 +40,7 @@ pub fn channel(queue: PacketQueue) -> (QueueSender, QueueReceiver) {
 pub struct Disconnected;
 
 impl QueueSender {
-    pub fn send(&self, packet: AudioPts) -> Result<usize, Disconnected> {
+    pub fn send(&self, packet: AudioPts) -> Result<(), Disconnected> {
         let mut queue = self.shared.queue.lock().unwrap();
 
         let Some(queue) = queue.as_mut() else {
@@ -51,7 +51,7 @@ impl QueueSender {
 
         self.shared.notify.notify_all();
 
-        Ok(queue.len())
+        Ok(())
     }
 }
 

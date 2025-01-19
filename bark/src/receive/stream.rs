@@ -50,7 +50,7 @@ impl DecodeStream {
         }
     }
 
-    pub fn send(&self, audio: AudioPts) -> Result<usize, Disconnected> {
+    pub fn send(&self, audio: AudioPts) -> Result<(), Disconnected> {
         self.tx.send(audio)
     }
 
