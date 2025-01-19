@@ -218,20 +218,17 @@ async fn run_format<F: Format>(
     let receiver = Receiver::new(output, metrics.clone());
 
     thread::start("bark/network", move || {
-        network_thread(socket, metrics, receiver)
+        network_thread(socket, receiver)
     }).await
 }
 
 fn network_thread<F: Format>(
     socket: Socket,
-    metrics: MetricsSender,
     mut receiver: Receiver<F>,
 ) -> Result<(), RunError> {
-    let node = stats::node::get();
-
-    thread::set_name("bark/network");
     thread::set_realtime_priority();
 
+    let node = stats::node::get();
     let protocol = ProtocolSocket::new(socket);
 
     loop {

@@ -1,5 +1,4 @@
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use bark_core::audio::{Format, FrameCount};
 use bark_core::receive::pipeline::Pipeline;
@@ -15,6 +14,7 @@ use crate::stats::server::MetricsSender;
 use crate::time;
 use crate::receive::output::OutputRef;
 use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};
+use crate::thread;
 
 pub struct DecodeStream {
     tx: QueueSender,
@@ -35,9 +35,13 @@ impl DecodeStream {
 
         let stats = Arc::new(Mutex::new(DecodeStats::default()));
 
-        thread::spawn({
+        std::thread::spawn({
             let stats = stats.clone();
-            move || run_stream(state, stats)
+            move || {
+                thread::set_name("bark/audio");
+                thread::set_realtime_priority();
+                run_stream(state, stats);
+            }
         });
 
         DecodeStream {
