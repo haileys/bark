@@ -125,6 +125,8 @@ fn audio_thread<F: Format>(
     sid: SessionId,
     protocol: Arc<ProtocolSocket>,
 ) {
+    thread::set_realtime_priority();
+
     let mut audio_header = AudioPacketHeader {
         sid,
         seq: 1,
