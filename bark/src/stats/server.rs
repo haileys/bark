@@ -1,18 +1,18 @@
-use std::fmt::{self, Display, Write};
+use std::fmt::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
-use std::{i64, u64};
 
 use axum::extract::State;
 use axum::Router;
 use axum::routing::get;
+use derive_more::Deref;
 use structopt::StructOpt;
 use thiserror::Error;
 
-use bark_core::audio::FrameCount;
 use bark_protocol::time::{SampleDuration, TimestampDelta};
+
+use super::value::{Counter, Gauge};
 
 #[derive(StructOpt)]
 pub struct MetricsOpt {
@@ -24,89 +24,37 @@ pub struct MetricsOpt {
     listen: SocketAddr,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deref)]
 pub struct MetricsSender {
-    data: Arc<MetricsData>,
+    metrics: Arc<ReceiverMetrics>,
 }
 
-impl MetricsSender {
-    pub fn observe_audio_offset(&self, delta: Option<TimestampDelta>) {
-        let value = match delta {
-            Some(delta) => delta.to_micros_lossy(),
-            // i64::MIN is a sentinel value indicating missing value
-            None => i64::MIN,
-        };
-
-        self.data.audio_offset.store(value, Ordering::Relaxed);
-    }
-
-    pub fn observe_buffer_delay(&self, length: SampleDuration) {
-        let value = length.to_micros_lossy();
-        self.data.buffer_delay.store(value, Ordering::Relaxed);
-    }
-
-    pub fn increment_buffer_underruns(&self) {
-        self.data.buffer_underruns.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn observe_queued_packets(&self, count: usize) {
-        self.data.queued_packets.store(count, Ordering::Relaxed);
-    }
-
-    pub fn observe_network_latency(&self, latency: Duration) {
-        let value = u64::try_from(latency.as_micros()).unwrap_or(u64::MAX);
-        self.data.network_latency.store(value, Ordering::Relaxed);
-    }
-
-    pub fn increment_packets_received(&self) {
-        self.data.packets_received.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn increment_packets_lost(&self) {
-        self.data.packets_received.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn increment_packets_missed(&self) {
-        self.data.packets_received.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn increment_frames_decoded(&self, count: FrameCount) {
-        let value = u64::try_from(count.0).expect("usize -> u64");
-        self.data.frames_decoded.fetch_add(value, Ordering::Relaxed);
-    }
-
-    pub fn increment_frames_played(&self, count: FrameCount) {
-        let value = u64::try_from(count.0).expect("usize -> u64");
-        self.data.frames_played.fetch_add(value, Ordering::Relaxed);
-    }
+pub struct ReceiverMetrics {
+    pub audio_offset: Gauge<Option<TimestampDelta>>,
+    pub buffer_delay: Gauge<SampleDuration>,
+    pub buffer_underruns: Counter,
+    pub queued_packets: Gauge<usize>,
+    pub network_latency: Gauge<Duration>,
+    pub packets_received: Counter,
+    pub packets_lost: Counter,
+    pub packets_missed: Counter,
+    pub frames_decoded: Counter,
+    pub frames_played: Counter,
 }
 
-struct MetricsData {
-    audio_offset: AtomicI64,
-    buffer_delay: AtomicU64,
-    buffer_underruns: AtomicU64,
-    queued_packets: AtomicUsize,
-    network_latency: AtomicU64,
-    packets_received: AtomicU64,
-    packets_lost: AtomicU64,
-    packets_missed: AtomicU64,
-    frames_decoded: AtomicU64,
-    frames_played: AtomicU64,
-}
-
-impl Default for MetricsData {
-    fn default() -> Self {
-        MetricsData {
-            audio_offset: AtomicI64::new(i64::MIN),
-            buffer_delay: Default::default(),
-            buffer_underruns: Default::default(),
-            queued_packets: Default::default(),
-            network_latency: Default::default(),
-            packets_received: Default::default(),
-            packets_lost: Default::default(),
-            packets_missed: Default::default(),
-            frames_decoded: Default::default(),
-            frames_played: Default::default(),
+impl ReceiverMetrics {
+    fn new() -> Self {
+        ReceiverMetrics {
+            audio_offset: Gauge::new("bark_receiver_audio_offset_usec"),
+            buffer_delay: Gauge::new("bark_receiver_buffer_delay_usec"),
+            buffer_underruns: Counter::new("bark_receiver_buffer_underruns"),
+            network_latency: Gauge::new("bark_receiver_network_latency_usec"),
+            queued_packets: Gauge::new("bark_receiver_queued_packet_count"),
+            packets_received: Counter::new("bark_receiver_packets_received"),
+            packets_lost: Counter::new("bark_receiver_packets_lost"),
+            packets_missed: Counter::new("bark_receiver_packets_missed"),
+            frames_decoded: Counter::new("bark_receiver_frames_decoded"),
+            frames_played: Counter::new("bark_receiver_frames_played"),
         }
     }
 }
@@ -116,11 +64,11 @@ impl Default for MetricsData {
 pub struct StartError(#[from] tokio::io::Error);
 
 pub async fn start(opt: &MetricsOpt) -> Result<MetricsSender, StartError> {
-    let data = Arc::new(MetricsData::default());
+    let metrics_data = Arc::new(ReceiverMetrics::new());
 
     let app = Router::new()
         .route("/metrics", get(metrics))
-        .with_state(data.clone());
+        .with_state(metrics_data.clone());
 
     let listener = tokio::net::TcpListener::bind(&opt.listen).await?;
 
@@ -128,65 +76,24 @@ pub async fn start(opt: &MetricsOpt) -> Result<MetricsSender, StartError> {
         axum::serve(listener, app).await.unwrap()
     });
 
-    Ok(MetricsSender { data })
+    Ok(MetricsSender { metrics: metrics_data })
 }
 
-async fn metrics(data: State<Arc<MetricsData>>) -> String {
-    render_metrics(&data).unwrap_or_default()
+async fn metrics(metrics: State<Arc<ReceiverMetrics>>) -> String {
+    render_metrics(&metrics).unwrap_or_default()
 }
 
-fn render_metrics(data: &MetricsData) -> Result<String, std::fmt::Error> {
-    let mut render = RenderMetrics::new();
-
-    let audio_offset_usec = data.audio_offset.load(Ordering::Relaxed);
-    if audio_offset_usec != i64::MIN {
-        render.gauge("bark_receiver_audio_offset_usec", audio_offset_usec)?;
-    }
-
-    // TODO - rename this one
-    render.gauge("bark_receiver_buffer_length_usec", data.buffer_delay.load(Ordering::Relaxed))?;
-    render.counter("bark_receiver_buffer_underruns", data.buffer_underruns.load(Ordering::Relaxed))?;
-
-    let network_latency_usec = data.network_latency.load(Ordering::Relaxed);
-    if network_latency_usec != 0 {
-        render.gauge("bark_receiver_network_latency_usec", network_latency_usec)?;
-    }
-
-    render.gauge("bark_receiver_queued_packet_count", data.queued_packets.load(Ordering::Relaxed))?;
-
-    render.counter("bark_receiver_packets_received", data.packets_received.load(Ordering::Relaxed))?;
-    render.counter("bark_receiver_packets_lost", data.packets_lost.load(Ordering::Relaxed))?;
-    render.counter("bark_receiver_packets_missed", data.packets_missed.load(Ordering::Relaxed))?;
-    render.counter("bark_receiver_frames_decoded", data.frames_decoded.load(Ordering::Relaxed))?;
-    render.counter("bark_receiver_frames_played", data.frames_played.load(Ordering::Relaxed))?;
-    Ok(render.finish())
-}
-
-struct RenderMetrics {
-    buff: String,
-}
-
-impl RenderMetrics {
-    pub fn new() -> Self {
-        RenderMetrics { buff: String::new() }
-    }
-
-    fn expose(&mut self, type_: &str, name: &str, value: impl Display) -> fmt::Result {
-        write!(&mut self.buff, "# TYPE {name} {type_}\n")?;
-        write!(&mut self.buff, "{name} {value}\n")?;
-        write!(&mut self.buff, "\n")?;
-        Ok(())
-    }
-
-    pub fn gauge(&mut self, name: &str, value: impl Display) -> fmt::Result {
-        self.expose("gauge", name, value)
-    }
-
-    pub fn counter(&mut self, name: &str, value: impl Display) -> fmt::Result {
-        self.expose("counter", name, value)
-    }
-
-    pub fn finish(self) -> String {
-        self.buff
-    }
+fn render_metrics(metrics: &ReceiverMetrics) -> Result<String, std::fmt::Error> {
+    let mut buffer = String::new();
+    write!(&mut buffer, "{}", metrics.audio_offset)?;
+    write!(&mut buffer, "{}", metrics.buffer_delay)?;
+    write!(&mut buffer, "{}", metrics.buffer_underruns)?;
+    write!(&mut buffer, "{}", metrics.network_latency)?;
+    write!(&mut buffer, "{}", metrics.queued_packets)?;
+    write!(&mut buffer, "{}", metrics.packets_received)?;
+    write!(&mut buffer, "{}", metrics.packets_lost)?;
+    write!(&mut buffer, "{}", metrics.packets_missed)?;
+    write!(&mut buffer, "{}", metrics.frames_decoded)?;
+    write!(&mut buffer, "{}", metrics.frames_played)?;
+    Ok(buffer)
 }

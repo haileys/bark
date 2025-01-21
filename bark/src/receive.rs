@@ -125,10 +125,10 @@ impl<F: Format> Receiver<F> {
         let latency_usec = now.0.saturating_sub(packet_dts.0);
         let latency = Duration::from_micros(latency_usec);
         stream.latency.observe(latency);
-        self.metrics.observe_network_latency(latency);
+        self.metrics.network_latency.observe(latency);
 
         // update packet received metrics
-        self.metrics.increment_packets_received();
+        self.metrics.packets_received.increment();
 
         Ok(())
     }

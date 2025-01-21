@@ -63,7 +63,7 @@ fn recover<T>(output: &Inner, func: impl Fn() -> Result<T, alsa::Error>) -> Resu
                 output.pcm.recover(err.errno(), false)?;
 
                 if err.errno() == libc::EPIPE {
-                    output.metrics.increment_buffer_underruns();
+                    output.metrics.buffer_underruns.increment();
                 }
             }
             _ => { return Err(err); }

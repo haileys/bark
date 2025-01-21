@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use bark_core::audio::{Format, FrameCount};
+use bark_core::audio::Format;
 use bark_core::receive::pipeline::Pipeline;
 use bark_core::receive::queue::{AudioPts, PacketQueue};
 use bark_core::receive::timing::Timing;
@@ -94,16 +94,16 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
         };
 
         // update queue related metrics
-        stream.metrics.observe_queued_packets(queue_len);
+        stream.metrics.queued_packets.observe(queue_len);
 
         if queue_item.is_none() {
             if queue_len == 0 {
                 // if packet is missing because the queue is empty, we are running too
                 // hot up against the stream and missed our deadline
-                stream.metrics.increment_packets_missed();
+                stream.metrics.packets_missed.increment();
             } else {
                 // if the queue is not empty, this is just network packet loss
-                stream.metrics.increment_packets_lost();
+                stream.metrics.packets_lost.increment();
             }
         }
 
@@ -117,7 +117,7 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
         let buffer = &buffer[0..frames];
 
         // increment frames decoded metric
-        stream.metrics.increment_frames_decoded(FrameCount(frames));
+        stream.metrics.frames_decoded.add(frames);
 
         // lock output
         let Some(output) = stream.output.lock() else {
@@ -128,7 +128,7 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
         // get current output delay
         let delay = output.delay().unwrap();
         stats.output_latency = delay;
-        stream.metrics.observe_buffer_delay(delay);
+        stream.metrics.buffer_delay.observe(delay);
 
         // calculate presentation timestamp based on output delay
         let pts = time::now();
@@ -152,12 +152,12 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
 
             let audio_offset = timing.real.delta(timing.play);
             stats.audio_latency = audio_offset;
-            stream.metrics.observe_audio_offset(Some(audio_offset));
+            stream.metrics.audio_offset.observe(Some(audio_offset));
         } else {
             // queue_len is length before attempted pop, if 0 then we know
             // that the queue is empty
             if queue_len == 0 {
-                stream.metrics.observe_audio_offset(None);
+                stream.metrics.audio_offset.observe(None);
             }
         }
 
@@ -165,7 +165,7 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
         *stats_tx.lock().unwrap() = stats.clone();
 
         // increment frames output metric
-        stream.metrics.increment_frames_played(FrameCount(buffer.len()));
+        stream.metrics.frames_played.add(buffer.len());
 
         // send audio to ALSA
         match output.write(buffer) {

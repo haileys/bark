@@ -1,6 +1,7 @@
 pub mod node;
 pub mod render;
 pub mod server;
+pub mod value;
 
 use std::collections::HashMap;
 use std::sync::Arc;
