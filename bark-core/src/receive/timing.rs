@@ -32,32 +32,31 @@ impl RateAdjust {
         // parameters, maybe these could be cli args?
         let start_slew_threshold = Duration::from_micros(500);
         let stop_slew_threshold = Duration::from_micros(100);
-        let slew_target_duration = Duration::from_millis(1000);
 
         // turn them into native units
         let start_slew_threshold = SampleDuration::from_std_duration_lossy(start_slew_threshold);
         let stop_slew_threshold = SampleDuration::from_std_duration_lossy(stop_slew_threshold);
 
-        let frame_offset = timing.real.delta(timing.play);
+        let offset = timing.real.delta(timing.play);
 
-        if frame_offset.abs() < stop_slew_threshold {
+        if offset.abs() < stop_slew_threshold {
             self.slew = false;
             return None;
         }
 
-        if frame_offset.abs() < start_slew_threshold && !self.slew {
+        if offset.abs() < start_slew_threshold && !self.slew {
             return None;
         }
 
-        let slew_duration_duration = i64::try_from(slew_target_duration.as_micros()).unwrap();
         let base_sample_rate = i64::from(bark_protocol::SAMPLE_RATE);
-        let rate_offset = frame_offset.as_frames() * 1_000_000 / slew_duration_duration;
-        let rate = base_sample_rate + rate_offset;
 
-        // clamp any potential slow down to 0.1%, we shouldn't ever get too far
+        let rate_adjust = offset.as_frames().pow(3) / 48;
+        let rate = base_sample_rate + rate_adjust;
+
+        // clamp any potential rate adjustment to 1%, we shouldn't ever get too far
         // ahead of the stream
-        let rate = std::cmp::max(base_sample_rate * 999 / 1000, rate);
-        let rate = std::cmp::min(base_sample_rate * 1001 / 1000, rate);
+        let rate = std::cmp::max(base_sample_rate * 99 / 100, rate);
+        let rate = std::cmp::min(base_sample_rate * 101 / 100, rate);
 
         self.slew = true;
         Some(SampleRate(u32::try_from(rate).unwrap()))
