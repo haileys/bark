@@ -69,7 +69,7 @@ impl<T> Display for Gauge<T> where T: GaugeValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(value) = self.get() {
             write!(f, "# TYPE {} gauge\n", self.name)?;
-            write!(f, "{} {}", self.name, value)?;
+            write!(f, "{} {}\n\n", self.name, value)?;
         }
         Ok(())
     }
