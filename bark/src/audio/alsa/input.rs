@@ -21,13 +21,13 @@ impl<F: Format> Input<F> {
     }
 
     pub fn read(&self, frames: &mut [F::Frame]) -> Result<Timestamp, alsa::Error> {
-        let now = Timestamp::from_micros_lossy(time::now());
-        let timestamp = now.saturating_sub(self.delay()?);
-
         match F::frames_mut(frames) {
             FramesMut::S16(frames) => read_impl::<S16>(&self.pcm, frames)?,
             FramesMut::F32(frames) => read_impl::<F32>(&self.pcm, frames)?,
         }
+
+        let now = Timestamp::from_micros_lossy(time::now());
+        let timestamp = now.saturating_sub(self.delay()?);
 
         Ok(timestamp)
     }
