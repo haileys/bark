@@ -17,7 +17,7 @@ use crate::audio::Output;
 use crate::config;
 use crate::receive::output::OutputRef;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
-use crate::stats::{self, server::ReceiverMetrics};
+use crate::stats::{self, ReceiverMetrics};
 use crate::{thread, time};
 use crate::RunError;
 
@@ -201,7 +201,7 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
 async fn run_format<F: Format>(
     opt: ReceiveOpt,
     socket: Socket,
-    metrics: stats::server::ReceiverMetrics,
+    metrics: stats::ReceiverMetrics,
 ) -> Result<(), RunError> {
     let device_opt = DeviceOpt {
         device: opt.output_device,

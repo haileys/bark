@@ -10,7 +10,7 @@ use bark_protocol::types::AudioPacketHeader;
 use bark_protocol::FRAMES_PER_PACKET;
 use bytemuck::Zeroable;
 
-use crate::stats::server::ReceiverMetrics;
+use crate::stats::ReceiverMetrics;
 use crate::time;
 use crate::receive::output::OutputRef;
 use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};

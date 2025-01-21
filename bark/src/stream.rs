@@ -21,7 +21,8 @@ use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId};
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
-use crate::stats::server::{MetricsOpt, SourceMetrics};
+use crate::stats::server::MetricsOpt;
+use crate::stats::SourceMetrics;
 use crate::{config, stats, thread, time};
 use crate::RunError;
 

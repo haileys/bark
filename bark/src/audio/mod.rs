@@ -2,7 +2,7 @@ use bark_core::audio::Format;
 use bark_protocol::time::{SampleDuration, Timestamp};
 use thiserror::Error;
 
-use crate::stats::server::ReceiverMetrics;
+use crate::stats::ReceiverMetrics;
 
 use self::config::DeviceOpt;
 

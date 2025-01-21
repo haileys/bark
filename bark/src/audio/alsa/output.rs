@@ -8,7 +8,7 @@ use bark_protocol::time::SampleDuration;
 
 use crate::audio::config::DeviceOpt;
 use crate::audio::alsa::config::{self, OpenError};
-use crate::stats::server::ReceiverMetrics;
+use crate::stats::ReceiverMetrics;
 
 pub struct Output<F: Format> {
     inner: Inner,

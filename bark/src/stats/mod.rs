@@ -1,3 +1,4 @@
+pub mod metrics;
 pub mod node;
 pub mod render;
 pub mod server;
@@ -18,6 +19,8 @@ use crate::socket::{Socket, SocketOpt, PeerId, ProtocolSocket};
 use crate::RunError;
 
 use self::render::Padding;
+
+pub use metrics::{ReceiverMetrics, SourceMetrics};
 
 #[derive(StructOpt)]
 pub struct StatsOpt {
