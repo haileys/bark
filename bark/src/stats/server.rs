@@ -6,7 +6,6 @@ use std::time::Duration;
 use axum::extract::State;
 use axum::Router;
 use axum::routing::get;
-use derive_more::Deref;
 use structopt::StructOpt;
 use thiserror::Error;
 
@@ -24,12 +23,10 @@ pub struct MetricsOpt {
     listen: SocketAddr,
 }
 
-#[derive(Clone, Deref)]
-pub struct MetricsSender {
-    metrics: Arc<ReceiverMetrics>,
-}
+pub type ReceiverMetrics = Arc<ReceiverMetricsData>;
+pub type SourceMetrics = Arc<SourceMetricsData>;
 
-pub struct ReceiverMetrics {
+pub struct ReceiverMetricsData {
     pub audio_offset: Gauge<Option<TimestampDelta>>,
     pub buffer_delay: Gauge<SampleDuration>,
     pub buffer_underruns: Counter,
@@ -42,9 +39,9 @@ pub struct ReceiverMetrics {
     pub frames_played: Counter,
 }
 
-impl ReceiverMetrics {
+impl ReceiverMetricsData {
     fn new() -> Self {
-        ReceiverMetrics {
+        Self {
             audio_offset: Gauge::new("bark_receiver_audio_offset_usec"),
             buffer_delay: Gauge::new("bark_receiver_buffer_delay_usec"),
             buffer_underruns: Counter::new("bark_receiver_buffer_underruns"),
@@ -59,16 +56,40 @@ impl ReceiverMetrics {
     }
 }
 
+pub struct SourceMetricsData {}
+
+impl SourceMetricsData {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+#[derive(Clone)]
+enum MetricsState {
+    Receiver(ReceiverMetrics),
+    Source(SourceMetrics),
+}
+
 #[derive(Debug, Error)]
 #[error("starting metrics server: {0}")]
 pub struct StartError(#[from] tokio::io::Error);
 
-pub async fn start(opt: &MetricsOpt) -> Result<MetricsSender, StartError> {
-    let metrics_data = Arc::new(ReceiverMetrics::new());
+pub async fn start_receiver(opt: &MetricsOpt) -> Result<ReceiverMetrics, StartError> {
+    let metrics = Arc::new(ReceiverMetricsData::new());
+    start(opt, MetricsState::Receiver(metrics.clone())).await?;
+    Ok(metrics)
+}
 
+pub async fn start_source(opt: &MetricsOpt) -> Result<SourceMetrics, StartError> {
+    let metrics = Arc::new(SourceMetricsData::new());
+    start(opt, MetricsState::Source(metrics.clone())).await?;
+    Ok(metrics)
+}
+
+async fn start(opt: &MetricsOpt, state: MetricsState) -> Result<(), StartError> {
     let app = Router::new()
         .route("/metrics", get(metrics))
-        .with_state(metrics_data.clone());
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&opt.listen).await?;
 
@@ -76,14 +97,17 @@ pub async fn start(opt: &MetricsOpt) -> Result<MetricsSender, StartError> {
         axum::serve(listener, app).await.unwrap()
     });
 
-    Ok(MetricsSender { metrics: metrics_data })
+    Ok(())
 }
 
-async fn metrics(metrics: State<Arc<ReceiverMetrics>>) -> String {
-    render_metrics(&metrics).unwrap_or_default()
+async fn metrics(metrics: State<MetricsState>) -> String {
+    match &*metrics {
+        MetricsState::Receiver(metrics) => render_receiver_metrics(metrics).unwrap_or_default(),
+        MetricsState::Source(metrics) => render_source_metrics(metrics).unwrap_or_default(),
+    }
 }
 
-fn render_metrics(metrics: &ReceiverMetrics) -> Result<String, std::fmt::Error> {
+fn render_receiver_metrics(metrics: &ReceiverMetrics) -> Result<String, std::fmt::Error> {
     let mut buffer = String::new();
     write!(&mut buffer, "{}", metrics.audio_offset)?;
     write!(&mut buffer, "{}", metrics.buffer_delay)?;
@@ -95,5 +119,10 @@ fn render_metrics(metrics: &ReceiverMetrics) -> Result<String, std::fmt::Error> 
     write!(&mut buffer, "{}", metrics.packets_missed)?;
     write!(&mut buffer, "{}", metrics.frames_decoded)?;
     write!(&mut buffer, "{}", metrics.frames_played)?;
+    Ok(buffer)
+}
+
+fn render_source_metrics(_metrics: &SourceMetrics) -> Result<String, std::fmt::Error> {
+    let buffer = String::new();
     Ok(buffer)
 }

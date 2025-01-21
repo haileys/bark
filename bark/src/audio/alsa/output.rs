@@ -8,7 +8,7 @@ use bark_protocol::time::SampleDuration;
 
 use crate::audio::config::DeviceOpt;
 use crate::audio::alsa::config::{self, OpenError};
-use crate::stats::server::MetricsSender;
+use crate::stats::server::ReceiverMetrics;
 
 pub struct Output<F: Format> {
     inner: Inner,
@@ -17,11 +17,11 @@ pub struct Output<F: Format> {
 
 struct Inner {
     pcm: PCM,
-    metrics: MetricsSender,
+    metrics: ReceiverMetrics,
 }
 
 impl<F: Format> Output<F> {
-    pub fn new(opt: &DeviceOpt, metrics: MetricsSender) -> Result<Self, OpenError> {
+    pub fn new(opt: &DeviceOpt, metrics: ReceiverMetrics) -> Result<Self, OpenError> {
         let pcm = config::open_pcm(opt, F::KIND, Direction::Playback)?;
 
         Ok(Output {

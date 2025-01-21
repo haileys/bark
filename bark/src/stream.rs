@@ -21,7 +21,7 @@ use bark_protocol::types::{TimestampMicros, AudioPacketHeader, SessionId};
 use crate::audio::config::{DeviceOpt, DEFAULT_PERIOD, DEFAULT_BUFFER};
 use crate::audio::Input;
 use crate::socket::{Socket, SocketOpt, ProtocolSocket};
-use crate::stats::server::{MetricsOpt, MetricsSender};
+use crate::stats::server::{MetricsOpt, SourceMetrics};
 use crate::{config, stats, thread, time};
 use crate::RunError;
 
@@ -66,7 +66,7 @@ pub async fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
 
     let sid = generate_session_id();
 
-    let metrics = stats::server::start(&metrics).await?;
+    let metrics = stats::server::start_source(&metrics).await?;
 
     let audio_th = match opt.input_format {
         config::Format::S16 => start_audio_thread::<S16>(opt, protocol.clone(), sid, metrics)?,
@@ -85,7 +85,7 @@ fn start_audio_thread<F: Format>(
     opt: StreamOpt,
     protocol: Arc<ProtocolSocket>,
     sid: SessionId,
-    _metrics: MetricsSender,
+    _metrics: SourceMetrics,
 ) -> Result<Pin<Box<dyn Future<Output = ()>>>, RunError> {
     let input = Input::<F>::new(&DeviceOpt {
         device: opt.input_device,

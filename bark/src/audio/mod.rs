@@ -2,7 +2,7 @@ use bark_core::audio::Format;
 use bark_protocol::time::{SampleDuration, Timestamp};
 use thiserror::Error;
 
-use crate::stats::server::MetricsSender;
+use crate::stats::server::ReceiverMetrics;
 
 use self::config::DeviceOpt;
 
@@ -42,7 +42,7 @@ pub struct Output<F: Format> {
 }
 
 impl<F: Format> Output<F> {
-    pub fn new(opt: &DeviceOpt, metrics: MetricsSender) -> Result<Self, OpenError> {
+    pub fn new(opt: &DeviceOpt, metrics: ReceiverMetrics) -> Result<Self, OpenError> {
         Ok(Output {
             alsa: alsa::output::Output::new(opt, metrics)?,
         })

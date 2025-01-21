@@ -17,7 +17,7 @@ use crate::audio::Output;
 use crate::config;
 use crate::receive::output::OutputRef;
 use crate::socket::{ProtocolSocket, Socket, SocketOpt};
-use crate::stats::{self, server::MetricsSender};
+use crate::stats::{self, server::ReceiverMetrics};
 use crate::{thread, time};
 use crate::RunError;
 
@@ -32,7 +32,7 @@ pub mod stream;
 pub struct Receiver<F: Format> {
     stream: Option<Stream>,
     output: OwnedOutput<F>,
-    metrics: MetricsSender,
+    metrics: ReceiverMetrics,
 }
 
 struct Stream {
@@ -42,7 +42,7 @@ struct Stream {
 }
 
 impl Stream {
-    pub fn new<F: Format>(header: &AudioPacketHeader, output: OutputRef<F>, metrics: MetricsSender) -> Self {
+    pub fn new<F: Format>(header: &AudioPacketHeader, output: OutputRef<F>, metrics: ReceiverMetrics) -> Self {
         let decode = DecodeStream::new(header, output, metrics);
 
         Stream {
@@ -58,7 +58,7 @@ impl Stream {
 }
 
 impl<F: Format> Receiver<F> {
-    pub fn new(output: Output<F>, metrics: MetricsSender) -> Self {
+    pub fn new(output: Output<F>, metrics: ReceiverMetrics) -> Self {
         Receiver {
             stream: None,
             output: OwnedOutput::new(output),
@@ -190,7 +190,7 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
     let socket = Socket::open(&opt.socket)
         .map_err(RunError::Listen)?;
 
-    let metrics = stats::server::start(&metrics).await?;
+    let metrics = stats::server::start_receiver(&metrics).await?;
 
     match opt.output_format {
         config::Format::S16 => run_format::<S16>(opt, socket, metrics).await,
@@ -201,7 +201,7 @@ pub async fn run(opt: ReceiveOpt, metrics: stats::server::MetricsOpt) -> Result<
 async fn run_format<F: Format>(
     opt: ReceiveOpt,
     socket: Socket,
-    metrics: stats::server::MetricsSender,
+    metrics: stats::server::ReceiverMetrics,
 ) -> Result<(), RunError> {
     let device_opt = DeviceOpt {
         device: opt.output_device,

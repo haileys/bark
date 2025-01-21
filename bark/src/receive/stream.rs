@@ -10,7 +10,7 @@ use bark_protocol::types::AudioPacketHeader;
 use bark_protocol::FRAMES_PER_PACKET;
 use bytemuck::Zeroable;
 
-use crate::stats::server::MetricsSender;
+use crate::stats::server::ReceiverMetrics;
 use crate::time;
 use crate::receive::output::OutputRef;
 use crate::receive::queue::{self, Disconnected, QueueReceiver, QueueSender};
@@ -22,7 +22,7 @@ pub struct DecodeStream {
 }
 
 impl DecodeStream {
-    pub fn new<F: Format>(header: &AudioPacketHeader, output: OutputRef<F>, metrics: MetricsSender) -> Self {
+    pub fn new<F: Format>(header: &AudioPacketHeader, output: OutputRef<F>, metrics: ReceiverMetrics) -> Self {
         let queue = PacketQueue::new(header);
         let (tx, rx) = queue::channel(queue);
 
@@ -63,7 +63,7 @@ struct State<F: Format> {
     queue: QueueReceiver,
     pipeline: Pipeline<F>,
     output: OutputRef<F>,
-    metrics: MetricsSender,
+    metrics: ReceiverMetrics,
 }
 
 #[derive(Clone)]
