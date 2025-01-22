@@ -54,14 +54,19 @@ impl Timestamp {
 pub struct SampleDuration(u64);
 
 impl SampleDuration {
-    pub const ONE_PACKET: SampleDuration = SampleDuration::from_frame_count(FRAMES_PER_PACKET as u64);
+    pub const ONE_PACKET: SampleDuration = SampleDuration::from_frame_count(FRAMES_PER_PACKET);
 
     pub const fn zero() -> Self {
         SampleDuration(0)
     }
 
-    pub const fn from_frame_count(samples: u64) -> Self {
-        SampleDuration(samples)
+    pub const fn from_frame_count_u64(frames: u64) -> Self {
+        SampleDuration(frames)
+    }
+
+    #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+    pub const fn from_frame_count(frames: usize) -> Self {
+        SampleDuration(frames as u64)
     }
 
     pub fn to_frame_count(self) -> u64 {

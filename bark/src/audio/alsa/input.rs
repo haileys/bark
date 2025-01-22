@@ -34,7 +34,8 @@ impl<F: Format> Input<F> {
 
     fn delay(&self) -> Result<SampleDuration, alsa::Error> {
         let frames = self.pcm.delay()?;
-        Ok(SampleDuration::from_frame_count(frames.try_into().unwrap()))
+        let frames = u64::try_from(frames).expect("pcm delay is negative");
+        Ok(SampleDuration::from_frame_count_u64(frames))
     }
 }
 

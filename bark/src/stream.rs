@@ -37,11 +37,11 @@ pub struct StreamOpt {
 
     /// Size of discrete audio transfer buffer in frames
     #[structopt(long, env = "BARK_SOURCE_INPUT_PERIOD")]
-    pub input_period: Option<u64>,
+    pub input_period: Option<usize>,
 
     /// Size of decoded audio buffer in frames
     #[structopt(long, env = "BARK_SOURCE_INPUT_BUFFER")]
-    pub input_buffer: Option<u64>,
+    pub input_buffer: Option<usize>,
 
     #[structopt(long, env = "BARK_SOURCE_INPUT_FORMAT", default_value = "f32")]
     pub input_format: config::Format,

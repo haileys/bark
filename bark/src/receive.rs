@@ -176,11 +176,11 @@ pub struct ReceiveOpt {
 
     /// Size of discrete audio transfer buffer in frames
     #[structopt(long, env = "BARK_RECEIVE_OUTPUT_PERIOD")]
-    pub output_period: Option<u64>,
+    pub output_period: Option<usize>,
 
     /// Size of decoded audio buffer in frames
     #[structopt(long, env = "BARK_RECEIVE_OUTPUT_BUFFER")]
-    pub output_buffer: Option<u64>,
+    pub output_buffer: Option<usize>,
 
     #[structopt(long, env = "BARK_RECEIVE_OUTPUT_FORMAT", default_value = "f32")]
     pub output_format: config::Format,
