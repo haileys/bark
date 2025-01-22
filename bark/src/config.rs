@@ -22,6 +22,7 @@ pub struct Source {
     input: Device,
     delay_ms: Option<u64>,
     codec: Option<Codec>,
+    priority: Option<i8>,
 }
 
 #[derive(Deserialize, Default)]
@@ -82,6 +83,7 @@ pub fn load_into_env(config: &Config) {
     set_env_option("BARK_SOURCE_INPUT_BUFFER", config.source.input.buffer);
     set_env_option("BARK_SOURCE_INPUT_FORMAT", config.source.input.format);
     set_env_option("BARK_SOURCE_CODEC", config.source.codec);
+    set_env_option("BARK_SOURCE_PRIORITY", config.source.priority);
     set_env_option("BARK_RECEIVE_OUTPUT_DEVICE", config.receive.output.device.as_ref());
     set_env_option("BARK_RECEIVE_OUTPUT_PERIOD", config.receive.output.period);
     set_env_option("BARK_RECEIVE_OUTPUT_BUFFER", config.receive.output.buffer);

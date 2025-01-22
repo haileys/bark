@@ -59,6 +59,13 @@ pub struct StreamOpt {
         default_value = "f32le",
     )]
     pub format: config::Codec,
+
+    #[structopt(
+        long,
+        env = "BARK_SOURCE_PRIORITY",
+        default_value = "0",
+    )]
+    pub priority: i8,
 }
 
 pub async fn run(opt: StreamOpt, metrics: MetricsOpt) -> Result<(), RunError> {
@@ -112,7 +119,7 @@ fn start_audio_thread<F: Format>(
 
     let audio_th = thread::start("bark/audio", {
         let protocol = protocol.clone();
-        move || audio_thread(input, encoder, delay, sid, protocol)
+        move || audio_thread(input, encoder, delay, sid, opt.priority, protocol)
     });
 
     Ok(Box::pin(audio_th))
@@ -123,6 +130,7 @@ fn audio_thread<F: Format>(
     mut encoder: Box<dyn Encode>,
     delay: SampleDuration,
     sid: SessionId,
+    priority: i8,
     protocol: Arc<ProtocolSocket>,
 ) {
     thread::set_realtime_priority();
@@ -133,7 +141,7 @@ fn audio_thread<F: Format>(
         pts: TimestampMicros(0),
         dts: TimestampMicros(0),
         format: encoder.header_format(),
-        priority: 0,
+        priority,
         padding: Default::default(),
     };
 
