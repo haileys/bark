@@ -8,7 +8,7 @@ use structopt::StructOpt;
 use bark_core::receive::queue::AudioPts;
 
 use bark_protocol::time::{Timestamp, SampleDuration};
-use bark_protocol::types::{AudioPacketHeader, SessionId};
+use bark_protocol::types::{AudioPacketHeader, SessionId, TimestampMicros};
 use bark_protocol::types::stats::receiver::ReceiverStats;
 use bark_protocol::packet::{Audio, PacketKind, Pong, StatsReply};
 
@@ -39,21 +39,36 @@ struct Stream {
     sid: SessionId,
     decode: DecodeStream,
     latency: Aggregate<Duration>,
+    receieved_last_packet: TimestampMicros,
+    priority: i8,
 }
 
+const STREAM_TIMEOUT: Duration = Duration::from_secs(1);
+
 impl Stream {
-    pub fn new<F: Format>(header: &AudioPacketHeader, output: OutputRef<F>, metrics: ReceiverMetrics) -> Self {
+    pub fn new<F: Format>(
+        header: &AudioPacketHeader,
+        output: OutputRef<F>,
+        metrics: ReceiverMetrics,
+        now: TimestampMicros,
+    ) -> Self {
         let decode = DecodeStream::new(header, output, metrics);
 
         Stream {
             sid: header.sid,
             decode,
             latency: Aggregate::new(),
+            receieved_last_packet: now,
+            priority: header.priority,
         }
     }
 
     pub fn network_latency(&self) -> Option<Duration> {
         self.latency.median()
+    }
+
+    pub fn is_active(&self, now: TimestampMicros) -> bool {
+        self.receieved_last_packet > now.subtract(STREAM_TIMEOUT)
     }
 }
 
@@ -87,18 +102,26 @@ impl<F: Format> Receiver<F> {
         self.stream.as_ref().map(|s| s.sid)
     }
 
-    fn prepare_stream(&mut self, header: &AudioPacketHeader) -> &mut Stream {
+    fn prepare_stream(&mut self, header: &AudioPacketHeader, now: TimestampMicros) -> &mut Stream {
         let new_stream = match &self.stream {
-            Some(stream) => stream.sid < header.sid,
-            None => true,
+            Some(current) if current.is_active(now) => {
+                if header.priority > current.priority {
+                    true
+                } else if header.priority == current.priority {
+                    header.sid > current.sid
+                } else {
+                    false
+                }
+            }
+            _ => true,
         };
 
         if new_stream {
             // start new stream
-            let stream = Stream::new(header, self.output.steal(), self.metrics.clone());
+            let stream = Stream::new(header, self.output.steal(), self.metrics.clone(), now);
 
             // new stream is taking over! switch over to it
-            log::info!("new stream beginning: sid={}", header.sid.0);
+            log::info!("new stream beginning: priority={} sid={}", header.priority, header.sid.0);
             self.stream = Some(stream);
         }
 
@@ -109,20 +132,17 @@ impl<F: Format> Receiver<F> {
         let now = time::now();
 
         let header = packet.header();
-        let packet_dts = header.dts;
-
-        let stream = self.prepare_stream(header);
-
-        // translate presentation timestamp of this packet:
         let pts = Timestamp::from_micros_lossy(header.pts);
+        let dts = header.dts;
 
+        let stream = self.prepare_stream(header, now);
         stream.decode.send(AudioPts {
             pts,
             audio: packet,
         })?;
 
         // network latency metric
-        let latency_usec = now.0.saturating_sub(packet_dts.0);
+        let latency_usec = now.0.saturating_sub(dts.0);
         let latency = Duration::from_micros(latency_usec);
         stream.latency.observe(latency);
         self.metrics.network_latency.observe(latency);

@@ -133,6 +133,8 @@ fn audio_thread<F: Format>(
         pts: TimestampMicros(0),
         dts: TimestampMicros(0),
         format: encoder.header_format(),
+        priority: 0,
+        padding: Default::default(),
     };
 
     loop {
@@ -189,13 +191,8 @@ fn network_thread(
         let (packet, peer) = protocol.recv_from().expect("protocol.recv_from");
 
         match packet.parse() {
-            Some(PacketKind::Audio(audio)) => {
-                // we should only ever receive an audio packet if another
-                // stream is present. check if it should take over
-                if audio.header().sid > sid {
-                    log::warn!("peer {peer} has taken over stream, exiting");
-                    break;
-                }
+            Some(PacketKind::Audio(_)) => {
+                // ignore
             }
             Some(PacketKind::StatsRequest(_)) => {
                 let reply = StatsReply::source(sid, node)

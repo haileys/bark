@@ -1,3 +1,5 @@
+use core::time::Duration;
+
 use bytemuck::{Pod, Zeroable};
 
 pub mod stats;
@@ -40,27 +42,27 @@ pub struct PacketHeader {
 #[repr(C)]
 pub struct AudioPacketHeader {
     // stream id - set to the start time of a stream, used by receivers to
-    // detect new stream starts, used by senders to detect stream takeovers
+    // detect newer streams in same priority rank
     pub sid: SessionId,
 
     // packet sequence number - monotonic + gapless, arbitrary start point
     pub seq: u64,
 
-    // presentation timestamp - used by receivers to detect + correct clock
-    // drift
+    // presentation timestamp
     pub pts: TimestampMicros,
 
-    // data timestamp - the stream's clock when packet is sent
+    // data timestamp
     pub dts: TimestampMicros,
 
     pub format: AudioPacketFormat,
+    pub priority: i8,
+
+    pub padding: [u8; 6],
 }
 
-/// This, regrettably, has to be a u64 to fill out `AudioPacketHeader` with
-/// no hidden padding. TODO this whole protocol tier needs a big rethink
 #[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct AudioPacketFormat(u64);
+pub struct AudioPacketFormat(u8);
 
 impl AudioPacketFormat {
     pub const F32LE: Self = Self(1);
@@ -87,9 +89,16 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct TimestampMicros(pub u64);
+
+impl TimestampMicros {
+    pub fn subtract(&self, duration: Duration) -> TimestampMicros {
+        let duration = u64::try_from(duration.as_micros()).unwrap_or(u64::MAX);
+        TimestampMicros(self.0.saturating_sub(duration))
+    }
+}
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(transparent)]
