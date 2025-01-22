@@ -11,13 +11,19 @@ use crate::time;
 
 pub struct Input<F: Format> {
     pcm: PCM,
+    quantum: SampleDuration,
     _phantom: PhantomData<F>,
 }
 
 impl<F: Format> Input<F> {
     pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
         let pcm = config::open_pcm(opt, F::KIND, Direction::Capture)?;
-        Ok(Input { pcm, _phantom: PhantomData })
+        let (_buffer, period) = pcm.get_params()?;
+        Ok(Input {
+            pcm,
+            quantum: SampleDuration::from_frame_count_u64(period),
+            _phantom: PhantomData,
+        })
     }
 
     pub fn read(&self, frames: &mut [F::Frame]) -> Result<Timestamp, alsa::Error> {
@@ -26,8 +32,29 @@ impl<F: Format> Input<F> {
             FramesMut::F32(frames) => read_impl::<F32>(&self.pcm, frames)?,
         }
 
-        let now = Timestamp::from_micros_lossy(time::now());
-        let timestamp = now.saturating_sub(self.delay()?);
+        // calculate timestamp of this packet of audio.
+        //
+        // each quantum (aka period in ALSA terminology) of audio received
+        // from ALSA is assumed to begin at the timestamp it first enters the
+        // buffer.
+        //
+        // to calculate this time, take the current time, add the quantum, and
+        // subtract the current buffer delay (number of frames currently in the
+        // buffer + HW latency if applicable), making sure to compensate delay
+        // for the number of frames we just read.
+        //
+        // when quantum > bark packet size, we'll make multiple successful
+        // reads here without blocking, so the current time can be assumed to
+        // be ~roughly the same for each packet in a quantum.
+
+        let now = time::now();
+
+        let delay = self.delay()?
+            .add(SampleDuration::from_frame_count(frames.len()));
+
+        let timestamp = Timestamp::from_micros_lossy(now)
+            .add(self.quantum)
+            .saturating_sub(delay);
 
         Ok(timestamp)
     }
