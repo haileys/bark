@@ -1,4 +1,3 @@
-use std::array;
 use std::time::Duration;
 
 use bark_core::audio::{Format, F32, S16};
@@ -38,7 +37,6 @@ pub struct Receiver<F: Format> {
 struct Stream {
     sid: SessionId,
     decode: DecodeStream,
-    latency: Aggregate<Duration>,
     receieved_last_packet: TimestampMicros,
     priority: i8,
 }
@@ -57,14 +55,9 @@ impl Stream {
         Stream {
             sid: header.sid,
             decode,
-            latency: Aggregate::new(),
             receieved_last_packet: now,
             priority: header.priority,
         }
-    }
-
-    pub fn network_latency(&self) -> Option<Duration> {
-        self.latency.median()
     }
 
     pub fn is_active(&self, now: TimestampMicros) -> bool {
@@ -97,7 +90,11 @@ impl<F: Format> Receiver<F> {
             stats.set_audio_latency(decode.audio_latency);
             stats.set_output_latency(decode.output_latency);
 
-            if let Some(latency) = stream.network_latency() {
+            let latency = self.metrics.network_latency.get()
+                .and_then(|micros| u64::try_from(micros).ok())
+                .map(Duration::from_micros);
+
+            if let Some(latency) = latency {
                 stats.set_network_latency(latency);
             }
         }
@@ -152,46 +149,12 @@ impl<F: Format> Receiver<F> {
         // feed packet to stream
         stream.receive_packet(packet, now)?;
 
-        // network latency metric
+        // update metrics
         let latency = now.saturating_duration_since(dts);
-        stream.latency.observe(latency);
         self.metrics.network_latency.observe(latency);
-
-        // update packet received metrics
         self.metrics.packets_received.increment();
 
         Ok(())
-    }
-}
-
-struct Aggregate<T> {
-    samples: [T; 64],
-    count: usize,
-    index: usize,
-}
-
-impl<T: Copy + Default + Ord> Aggregate<T> {
-    pub fn new() -> Self {
-        let samples = array::from_fn(|_| Default::default());
-        Aggregate { samples, count: 0, index: 0 }
-    }
-
-    pub fn observe(&mut self, value: T) {
-        self.samples[self.index] = value;
-
-        if self.count < self.samples.len() {
-            self.count += 1;
-        }
-
-        self.index += 1;
-        self.index %= self.samples.len();
-    }
-
-    pub fn median(&self) -> Option<T> {
-        let mut samples = self.samples;
-        let samples = &mut samples[0..self.count];
-        samples.sort();
-        samples.get(self.count / 2).copied()
     }
 }
 
