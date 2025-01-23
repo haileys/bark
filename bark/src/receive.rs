@@ -43,7 +43,7 @@ struct Stream {
     priority: i8,
 }
 
-const STREAM_TIMEOUT: Duration = Duration::from_secs(1);
+const STREAM_TIMEOUT: Duration = Duration::from_millis(100);
 
 impl Stream {
     pub fn new<F: Format>(
