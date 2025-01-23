@@ -233,7 +233,6 @@ fn network_thread<F: Format>(
                 receiver.receive_audio(packet)?;
             }
             Some(PacketKind::StatsRequest(_)) => {
-                // let state = state.lock().unwrap();
                 let sid = receiver.current_session().unwrap_or(SessionId::zeroed());
                 let receiver = receiver.stats();
 
