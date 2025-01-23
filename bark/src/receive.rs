@@ -141,14 +141,21 @@ impl<F: Format> Receiver<F> {
         let header = packet.header();
         let dts = header.dts;
 
+        // prepare stream for incoming packet
+        let stream = self.prepare_stream(header, now);
+
+        // if packet does not match current stream, exit early
+        if header.sid != stream.sid {
+            return Ok(());
+        }
+
+        // feed packet to stream
+        stream.receive_packet(packet, now)?;
+
         // network latency metric
         let latency = now.saturating_duration_since(dts);
-        self.metrics.network_latency.observe(latency);
-
-        // send packet to stream
-        let stream = self.prepare_stream(header, now);
-        stream.receive_packet(packet, now)?;
         stream.latency.observe(latency);
+        self.metrics.network_latency.observe(latency);
 
         // update packet received metrics
         self.metrics.packets_received.increment();
