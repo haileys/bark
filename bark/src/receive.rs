@@ -68,7 +68,14 @@ impl Stream {
     }
 
     pub fn is_active(&self, now: TimestampMicros) -> bool {
-        self.receieved_last_packet > now.subtract(STREAM_TIMEOUT)
+        self.receieved_last_packet > now.saturating_sub(STREAM_TIMEOUT)
+    }
+
+    pub fn receive_packet(&mut self, audio: Audio, now: TimestampMicros) -> Result<(), Disconnected> {
+        let pts = Timestamp::from_micros_lossy(audio.header().pts);
+        self.decode.send(AudioPts { pts, audio })?;
+        self.receieved_last_packet = now;
+        Ok(())
     }
 }
 
@@ -132,20 +139,16 @@ impl<F: Format> Receiver<F> {
         let now = time::now();
 
         let header = packet.header();
-        let pts = Timestamp::from_micros_lossy(header.pts);
         let dts = header.dts;
 
-        let stream = self.prepare_stream(header, now);
-        stream.decode.send(AudioPts {
-            pts,
-            audio: packet,
-        })?;
-
         // network latency metric
-        let latency_usec = now.0.saturating_sub(dts.0);
-        let latency = Duration::from_micros(latency_usec);
-        stream.latency.observe(latency);
+        let latency = now.saturating_duration_since(dts);
         self.metrics.network_latency.observe(latency);
+
+        // send packet to stream
+        let stream = self.prepare_stream(header, now);
+        stream.receive_packet(packet, now)?;
+        stream.latency.observe(latency);
 
         // update packet received metrics
         self.metrics.packets_received.increment();

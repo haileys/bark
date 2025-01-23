@@ -94,9 +94,14 @@ bitflags::bitflags! {
 pub struct TimestampMicros(pub u64);
 
 impl TimestampMicros {
-    pub fn subtract(&self, duration: Duration) -> TimestampMicros {
+    pub fn saturating_sub(&self, duration: Duration) -> TimestampMicros {
         let duration = u64::try_from(duration.as_micros()).unwrap_or(u64::MAX);
         TimestampMicros(self.0.saturating_sub(duration))
+    }
+
+    pub fn saturating_duration_since(&self, rhs: TimestampMicros) -> Duration {
+        let micros = self.0.saturating_sub(rhs.0);
+        Duration::from_micros(micros)
     }
 }
 
