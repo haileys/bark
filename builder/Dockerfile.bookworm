@@ -1,0 +1,31 @@
+FROM rust:1-bookworm
+
+# add target architecture and update apt
+RUN dpkg --add-architecture arm64
+RUN dpkg --add-architecture armel
+RUN apt update
+
+# install toolchains for target arch
+RUN apt install -y \
+    crossbuild-essential-arm64 \
+    crossbuild-essential-armel
+
+RUN rustup target add \
+    aarch64-unknown-linux-gnu \
+    arm-unknown-linux-gnueabi
+
+# install our runtime dependencies for target arch
+RUN apt install -y \
+    libasound2-dev:arm64 \
+    libasound2-dev:armel \
+    libopus-dev:arm64 \
+    libopus-dev:armel \
+    libsoxr-dev:arm64 \
+    libsoxr-dev:armel \
+    libspeexdsp-dev:arm64 \
+    libspeexdsp-dev:armel
+
+# set env vars for cross compilation
+ENV PKG_CONFIG_ALLOW_CROSS=1
+# ENV PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+

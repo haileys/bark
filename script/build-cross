@@ -1,0 +1,58 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+die() {
+    echo "$1" >&2
+    exit 1
+}
+
+[[ "$#" == 2 ]] || die "usage: script/build-cross <distro> <arch>"
+
+distro="$1"
+arch="$2"
+dockerfile="builder/Dockerfile.$distro"
+
+[[ -f "$dockerfile" ]] || die "$dockerfile does not exist"
+
+case "$arch" in
+arm64)
+    cargo_target="aarch64-unknown-linux-gnu"
+    lib_target="aarch64-linux-gnu"
+    ;;
+armel)
+    cargo_target="arm-unknown-linux-gnueabi"
+    lib_target="arm-linux-gnueabi"
+    ;;
+*)
+    die "unknown arch: $arch"
+    ;;
+esac
+
+# build docker builder
+echo "+++ Building podman cross-builder"
+build_tag="bark-cross-build-$distro"
+podman build -f "$dockerfile" -t "$build_tag"
+
+# set defaults for influential cargo env vars
+: "${CARGO_HOME:="$HOME/.cargo/$distro"}"
+: "${CARGO_TARGET_DIR:="$PWD/target/$distro"}"
+
+# build app for target
+echo "+++ Compiling app for $distro/$arch"
+mkdir -p "$CARGO_HOME"
+mkdir -p "$CARGO_TARGET_DIR"
+
+podman run \
+    --rm \
+    --mount "type=bind,source=$PWD,destination=/src,readonly" \
+    --mount "type=bind,source=${CARGO_TARGET_DIR},destination=/cargo-target" \
+    --mount "type=bind,source=${CARGO_HOME},destination=/cargo-home" \
+    --env CARGO_TARGET_DIR=/cargo-target \
+    --env CARGO_HOME=/cargo-home \
+    --env "PKG_CONFIG_PATH=/usr/lib/$lib_target/pkgconfig" \
+    --workdir /src \
+    --tty \
+    --interactive \
+    "$build_tag" \
+    cargo build --release --target "$cargo_target"

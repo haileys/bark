@@ -1,4 +1,5 @@
-use alsa::{Direction, PCM, pcm::{HwParams, Format, Access}, ValueOr};
+use alsa::{Direction, PCM, ValueOr};
+use alsa::pcm::{Access, Format, Frames, HwParams};
 use thiserror::Error;
 
 use bark_core::audio::FormatKind;
@@ -11,9 +12,9 @@ pub enum OpenError {
     #[error("alsa error: {0}")]
     Alsa(#[from] alsa::Error),
     #[error("invalid period size (min = {min}, max = {max})")]
-    InvalidPeriodSize { min: i64, max: i64 },
+    InvalidPeriodSize { min: Frames, max: Frames },
     #[error("invalid buffer size (min = {min}, max = {max})")]
-    InvalidBufferSize { min: i64, max: i64 },
+    InvalidBufferSize { min: Frames, max: Frames },
 }
 
 pub fn open_pcm(opt: &DeviceOpt, format: FormatKind, direction: Direction)
