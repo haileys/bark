@@ -30,7 +30,7 @@ pub struct OutputRef<F: Format> {
 }
 
 impl<F: Format> OutputRef<F> {
-    pub fn lock(&self) -> Option<OutputLock<F>> {
+    pub fn lock(&self) -> Option<OutputLock<'_, F>> {
         let guard = self.output.lock().unwrap();
 
         if guard.is_some() {

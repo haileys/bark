@@ -5,8 +5,8 @@ pub trait Format: Send + Sync + 'static {
     type Sample: Pod + Zeroable + Copy + Clone + Send + soxr::format::Sample;
     const KIND: FormatKind;
 
-    fn frames(frames: &[Self::Frame]) -> Frames;
-    fn frames_mut(frames: &mut [Self::Frame]) -> FramesMut;
+    fn frames(frames: &[Self::Frame]) -> Frames<'_>;
+    fn frames_mut(frames: &mut [Self::Frame]) -> FramesMut<'_>;
 }
 
 pub enum FormatKind {
@@ -20,11 +20,11 @@ impl Format for S16 {
     type Sample = i16;
     const KIND: FormatKind = FormatKind::S16;
 
-    fn frames(frames: &[Self::Frame]) -> Frames {
+    fn frames(frames: &[Self::Frame]) -> Frames<'_> {
         Frames::S16(frames)
     }
 
-    fn frames_mut(frames: &mut [Self::Frame]) -> FramesMut {
+    fn frames_mut(frames: &mut [Self::Frame]) -> FramesMut<'_> {
         FramesMut::S16(frames)
     }
 }
@@ -35,11 +35,11 @@ impl Format for F32 {
     type Sample = f32;
     const KIND: FormatKind = FormatKind::F32;
 
-    fn frames(frames: &[Self::Frame]) -> Frames {
+    fn frames(frames: &[Self::Frame]) -> Frames<'_> {
         Frames::F32(frames)
     }
 
-    fn frames_mut(frames: &mut [Self::Frame]) -> FramesMut {
+    fn frames_mut(frames: &mut [Self::Frame]) -> FramesMut<'_> {
         FramesMut::F32(frames)
     }
 }
