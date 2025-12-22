@@ -30,7 +30,6 @@ depends=(
     "alsa-lib"
     "gcc-libs"
     "opus"
-    "speexdsp"
 )
 makedepends=("cargo")
 arch=("x86_64")
