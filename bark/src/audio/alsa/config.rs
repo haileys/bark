@@ -27,11 +27,8 @@ pub fn open_pcm(opt: &DeviceOpt, format: FormatKind, direction: Direction)
         let hwp = HwParams::any(&pcm)?;
         hwp.set_channels(bark_protocol::CHANNELS.0.into())?;
         hwp.set_rate(bark_protocol::SAMPLE_RATE.0, ValueOr::Nearest)?;
-        hwp.set_format(match format {
-            FormatKind::F32 => Format::float(),
-            FormatKind::S16 => Format::s16(),
-        })?;
         hwp.set_access(Access::RWInterleaved)?;
+        set_format(&hwp, format)?;
         set_period_size(&hwp, opt.period)?;
         set_buffer_size(&hwp, opt.buffer)?;
         pcm.hw_params(&hwp)?;
@@ -47,6 +44,13 @@ pub fn open_pcm(opt: &DeviceOpt, format: FormatKind, direction: Direction)
     log::info!("opened ALSA with buffer_size={buffer}, period_size={period}");
 
     Ok(pcm)
+}
+
+fn set_format(hwp: &HwParams, format: FormatKind) -> alsa::Result<()> {
+    hwp.set_format(match format {
+        FormatKind::F32 => Format::float(),
+        FormatKind::S16 => Format::s16(),
+    })
 }
 
 // period is the size of the discrete chunks of data that are sent to hardware
