@@ -17,11 +17,11 @@ pub enum OpenError {
     InvalidBufferSize { min: Frames, max: Frames },
 }
 
-pub fn open_pcm(opt: &DeviceOpt, format: FormatKind, direction: Direction)
+pub fn open_pcm(opt: &DeviceOpt, format: FormatKind, direction: Direction, nonblock: bool)
     -> Result<PCM, OpenError>
 {
     let device_name = opt.device.as_deref().unwrap_or("default");
-    let pcm = PCM::new(device_name, direction, false)?;
+    let pcm = PCM::new(device_name, direction, nonblock)?;
 
     {
         let hwp = HwParams::any(&pcm)?;

@@ -22,7 +22,7 @@ struct Inner {
 
 impl<F: Format> Output<F> {
     pub fn new(opt: &DeviceOpt, metrics: ReceiverMetrics) -> Result<Self, OpenError> {
-        let pcm = config::open_pcm(opt, F::KIND, Direction::Playback)?;
+        let pcm = config::open_pcm(opt, F::KIND, Direction::Playback, true)?;
 
         Ok(Output {
             inner: Inner {

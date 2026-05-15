@@ -17,7 +17,7 @@ pub struct Input<F: Format> {
 
 impl<F: Format> Input<F> {
     pub fn new(opt: &DeviceOpt) -> Result<Self, OpenError> {
-        let pcm = config::open_pcm(opt, F::KIND, Direction::Capture)?;
+        let pcm = config::open_pcm(opt, F::KIND, Direction::Capture, false)?;
         let (_buffer, period) = pcm.get_params()?;
         Ok(Input {
             pcm,
