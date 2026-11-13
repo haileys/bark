@@ -3,8 +3,9 @@ use core::time::Duration;
 use bark_protocol::time::{Timestamp, SampleDuration};
 use bark_protocol::SampleRate;
 
-pub struct RateAdjust {
+pub struct RateController {
     slew: bool,
+    rate: SampleRate,
 }
 
 #[derive(Copy, Clone)]
@@ -13,10 +14,11 @@ pub struct Timing {
     pub play: Timestamp,
 }
 
-impl RateAdjust {
+impl RateController {
     pub fn new() -> Self {
-        RateAdjust {
-            slew: false
+        RateController {
+            slew: false,
+            rate: bark_protocol::SAMPLE_RATE,
         }
     }
 
@@ -24,8 +26,12 @@ impl RateAdjust {
         self.slew
     }
 
-    pub fn sample_rate(&mut self, timing: Timing) -> SampleRate {
-        self.adjusted_rate(timing).unwrap_or(bark_protocol::SAMPLE_RATE)
+    pub fn rate(&self) -> SampleRate {
+        self.rate
+    }
+
+    pub fn measure(&mut self, timing: Timing) {
+        self.rate = self.adjusted_rate(timing).unwrap_or(bark_protocol::SAMPLE_RATE);
     }
 
     fn adjusted_rate(&mut self, timing: Timing) -> Option<SampleRate> {

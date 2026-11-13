@@ -87,6 +87,7 @@ impl<F: Format> Receiver<F> {
         if let Some(stream) = &self.stream {
             let decode = stream.decode.stats();
             stats.set_stream(decode.status);
+            stats.set_stream_rate(decode.rate);
             stats.set_audio_latency(decode.audio_latency);
             stats.set_output_latency(decode.output_latency);
 

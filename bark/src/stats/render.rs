@@ -1,3 +1,4 @@
+use bark_protocol::SampleRate;
 use termcolor::{WriteColor, ColorSpec, Color};
 
 use bark_protocol::packet::StatsReply;
@@ -55,6 +56,7 @@ fn receiver(out: &mut dyn WriteColor, stats: &ReceiverStats) {
     stream_status(out, stats.stream());
 
     time_field(out, "Audio", stats.audio_latency());
+    rate_field(out, "Rate", stats.stream_rate());
     time_field(out, "Output", stats.output_latency());
     time_field(out, "Network", stats.network_latency());
 }
@@ -102,6 +104,14 @@ fn indicator_style(value: Option<StreamStatus>) -> (ColorSpec, &'static str) {
     }
 
     (spec, text)
+}
+
+fn rate_field(out: &mut dyn WriteColor, name: &str, value: Option<SampleRate>) {
+    if let Some(SampleRate(rate)) = value {
+        let _ = write!(out, "  {name}:[{:>6} hz]", rate);
+    } else {
+        let _ = write!(out, "  {name}:[{:>6} hz]", "");
+    }
 }
 
 fn time_field(out: &mut dyn WriteColor, name: &str, value: Option<f64>) {

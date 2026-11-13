@@ -7,7 +7,7 @@ use bark_core::receive::timing::Timing;
 use bark_protocol::time::{SampleDuration, Timestamp, TimestampDelta};
 use bark_protocol::types::stats::receiver::StreamStatus;
 use bark_protocol::types::AudioPacketHeader;
-use bark_protocol::FRAMES_PER_PACKET;
+use bark_protocol::{FRAMES_PER_PACKET, SampleRate};
 use bytemuck::Zeroable;
 
 use crate::stats::ReceiverMetrics;
@@ -69,6 +69,7 @@ struct State<F: Format> {
 #[derive(Clone)]
 pub struct DecodeStats {
     pub status: StreamStatus,
+    pub rate: SampleRate,
     pub audio_latency: TimestampDelta,
     pub output_latency: SampleDuration,
 }
@@ -77,6 +78,7 @@ impl Default for DecodeStats {
     fn default() -> Self {
         DecodeStats {
             status: StreamStatus::Seek,
+            rate: SampleRate(0),
             audio_latency: TimestampDelta::zero(),
             output_latency: SampleDuration::zero(),
         }
@@ -142,13 +144,14 @@ fn run_stream<F: Format>(mut stream: State<F>, stats_tx: Arc<Mutex<DecodeStats>>
 
         // adjust resampler rate based on stream timing info
         if let Some(timing) = timing {
-            stream.pipeline.set_timing(timing);
+            stream.pipeline.measure_timing(timing);
 
-            if stream.pipeline.slew() {
-                stats.status = StreamStatus::Slew;
-            } else {
-                stats.status = StreamStatus::Sync;
-            }
+            let controller = stream.pipeline.controller();
+            stats.rate = controller.rate();
+            stats.status = match controller.slew() {
+                true => StreamStatus::Slew,
+                false => StreamStatus::Sync,
+            };
 
             let audio_offset = timing.real.delta(timing.play);
             stats.audio_latency = audio_offset;

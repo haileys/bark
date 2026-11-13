@@ -1,14 +1,15 @@
 use bitflags::bitflags;
 use bytemuck::{Zeroable, Pod};
 
-use crate::time::{SampleDuration, TimestampDelta};
+use crate::{SampleRate, time::{SampleDuration, TimestampDelta}};
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct ReceiverStats {
     flags: ReceiverStatsFlags,
     stream_status: u8,
-    _pad: [u8; 6],
+    _pad: [u8; 2],
+    stream_rate: u32,
 
     audio_latency: f64,
     output_latency: f64,
@@ -66,6 +67,17 @@ impl ReceiverStats {
 
     pub fn set_stream(&mut self, status: StreamStatus) {
         self.stream_status = status.into_u8();
+    }
+
+    pub fn stream_rate(&self) -> Option<SampleRate> {
+        match self.stream_rate {
+            0 => None,
+            rate => Some(SampleRate(rate)),
+        }
+    }
+
+    pub fn set_stream_rate(&mut self, rate: SampleRate) {
+        self.stream_rate = rate.0;
     }
 
     pub fn clear(&mut self) {

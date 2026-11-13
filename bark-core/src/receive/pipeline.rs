@@ -7,13 +7,13 @@ use bark_protocol::types::AudioPacketHeader;
 use crate::audio::Format;
 use crate::decode::Decoder;
 use crate::receive::resample::Resampler;
-use crate::receive::timing::{RateAdjust, Timing};
+use crate::receive::timing::{RateController, Timing};
 
 pub struct Pipeline<F: Format> {
     /// None indicates error creating decoder, we cannot decode this stream
     decoder: Option<Decoder>,
     resampler: Resampler<F>,
-    rate_adjust: RateAdjust,
+    rate_controller: RateController,
 }
 
 impl<F: Format> Pipeline<F> {
@@ -32,16 +32,17 @@ impl<F: Format> Pipeline<F> {
         Pipeline {
             decoder,
             resampler: Resampler::new(),
-            rate_adjust: RateAdjust::new(),
+            rate_controller: RateController::new(),
         }
     }
 
-    pub fn slew(&self) -> bool {
-        self.rate_adjust.slew()
+    pub fn controller(&self) -> &RateController {
+        &self.rate_controller
     }
 
-    pub fn set_timing(&mut self, timing: Timing) {
-        let rate = self.rate_adjust.sample_rate(timing);
+    pub fn measure_timing(&mut self, timing: Timing) {
+        self.rate_controller.measure(timing);
+        let rate = self.rate_controller.rate();
         let _ = self.resampler.set_input_rate(rate.0);
     }
 
