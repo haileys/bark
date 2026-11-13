@@ -24,6 +24,10 @@ armel)
     cargo_target="arm-unknown-linux-gnueabi"
     lib_target="arm-linux-gnueabi"
     ;;
+x86_64)
+    cargo_target="x86_64-unknown-linux-gnu"
+    lib_target="x86_64-linux-gnu"
+    ;;
 *)
     die "unknown arch: $arch"
     ;;
