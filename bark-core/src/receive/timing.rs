@@ -1,10 +1,19 @@
-use core::time::Duration;
+use bark_protocol::time::{SampleDuration, Timestamp, TimestampDelta};
+use bark_protocol::{SAMPLE_RATE, SampleRate};
 
-use bark_protocol::time::{Timestamp, SampleDuration};
-use bark_protocol::SampleRate;
+const START_SLEW_THRESHOLD: SampleDuration = SampleDuration::from_frame_count(SAMPLE_RATE.0 as usize / 2);
+const STOP_SLEW_THRESHOLD: SampleDuration = SampleDuration::from_frame_count(SAMPLE_RATE.0 as usize / 10);
+
+const SAMPLE_RATE_F64: f64 = SAMPLE_RATE.0 as f64;
+const K_P: f64 = 0.050;
+const K_I: f64 = 0.005;
+const K_D: f64 = 0.005;
 
 pub struct RateController {
-    slew: bool,
+    integral: f64,
+    prev_pts: Option<Timestamp>,
+    prev_err: Option<f64>,
+    // slew: bool,
     rate: SampleRate,
 }
 
@@ -17,13 +26,20 @@ pub struct Timing {
 impl RateController {
     pub fn new() -> Self {
         RateController {
-            slew: false,
-            rate: bark_protocol::SAMPLE_RATE,
+            integral: 0.0,
+            prev_pts: None,
+            prev_err: None,
+            rate: SAMPLE_RATE,
         }
     }
 
     pub fn slew(&self) -> bool {
-        self.slew
+        !self.sync()
+    }
+
+    pub fn sync(&self) -> bool {
+        let Some(err) = self.prev_err else { return false };
+        err < 0.001 && self.rate.0.abs_diff(SAMPLE_RATE.0) <= 1
     }
 
     pub fn rate(&self) -> SampleRate {
@@ -31,40 +47,39 @@ impl RateController {
     }
 
     pub fn measure(&mut self, timing: Timing) {
-        self.rate = self.adjusted_rate(timing).unwrap_or(bark_protocol::SAMPLE_RATE);
-    }
+        let error = timing.real.delta(timing.play);
+        let e_t = (error.as_frames() as f64) / SAMPLE_RATE_F64;
 
-    fn adjusted_rate(&mut self, timing: Timing) -> Option<SampleRate> {
-        // parameters, maybe these could be cli args?
-        let start_slew_threshold = Duration::from_micros(500);
-        let stop_slew_threshold = Duration::from_micros(100);
+        let prev_pts = self.prev_pts.replace(timing.play);
+        let d_t = prev_pts.map(|prev|
+            timing.play.delta(prev).as_frames() as f64 / SAMPLE_RATE_F64
+        );
 
-        // turn them into native units
-        let start_slew_threshold = SampleDuration::from_std_duration_lossy(start_slew_threshold);
-        let stop_slew_threshold = SampleDuration::from_std_duration_lossy(stop_slew_threshold);
+        let prev_err = self.prev_err.replace(e_t);
+        let d_e = prev_err.map(|prev| e_t - prev);
 
-        let offset = timing.real.delta(timing.play);
+        let p_term = K_P * e_t;
 
-        if offset.abs() < stop_slew_threshold {
-            self.slew = false;
-            return None;
-        }
+        let i_term = match d_t {
+            Some(d_t) => {
+                self.integral += e_t * d_t;
+                K_I * self.integral
+            }
+            _ => 0.0
+        };
 
-        if offset.abs() < start_slew_threshold && !self.slew {
-            return None;
-        }
+        let d_term = match (d_e, d_t) {
+            (Some(d_e), Some(d_t)) => {
+                K_D * (d_e + d_t)
+            }
+            _ => 0.0,
+        };
 
-        let base_sample_rate = i64::from(bark_protocol::SAMPLE_RATE);
+        let u_t = p_term + i_term + d_term;
 
-        let rate_adjust = offset.as_frames().pow(3) / 48;
-        let rate = base_sample_rate + rate_adjust;
-
-        // clamp any potential rate adjustment to 1%, we shouldn't ever get too far
-        // ahead of the stream
-        let rate = std::cmp::max(base_sample_rate * 99 / 100, rate);
-        let rate = std::cmp::min(base_sample_rate * 101 / 100, rate);
-
-        self.slew = true;
-        Some(SampleRate(u32::try_from(rate).unwrap()))
+        let rate_delta_f64 = f64::round(u_t * SAMPLE_RATE_F64);
+        let rate_delta = rate_delta_f64 as i32;
+        let rate = SAMPLE_RATE.0.strict_add_signed(rate_delta);
+        self.rate = SampleRate(rate);
     }
 }
